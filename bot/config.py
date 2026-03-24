@@ -17,9 +17,9 @@ ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 ODDS_SPORT_KEY = "basketball_ncaab"
 
 ORDER_TYPE = os.getenv("SIM_ORDER_TYPE", "LIMIT")
-DRY_RUN = os.getenv("BOT_DRY_RUN", "true").lower() == "true"
+DRY_RUN = os.getenv("BOT_DRY_RUN", "false").lower() == "true"
 
-ACCOUNT_RESYNC_SECONDS = float(os.getenv("ACCOUNT_RESYNC_SECONDS", "10"))
+ACCOUNT_RESYNC_SECONDS = float(os.getenv("ACCOUNT_RESYNC_SECONDS", "1"))
 NOTIFICATION_RESYNC_SECONDS = float(os.getenv("NOTIFICATION_RESYNC_SECONDS", "30"))
 PLAYOFFSTATUS_REFRESH_SECONDS = float(os.getenv("PLAYOFFSTATUS_REFRESH_SECONDS", "3600"))
 NCAA_REFRESH_LIVE_SECONDS = float(os.getenv("NCAA_REFRESH_LIVE_SECONDS", "20"))

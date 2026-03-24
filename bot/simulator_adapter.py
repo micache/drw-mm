@@ -4,7 +4,6 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from bot import config
 from bot.models import BookLevel, ContractMeta, FillView, OrderBook, OrderView
 
 
@@ -54,10 +53,10 @@ class SimulatorAdapter:
         return out
 
     async def place_bid(self, symbol: str, price: float, qty: int) -> None:
-        await self.client.send_order(symbol, price, qty, config.ORDER_TYPE)
+        await self.client.send_order(symbol, price, qty, "BID")
 
     async def place_ask(self, symbol: str, price: float, qty: int) -> None:
-        await self.client.send_order(symbol, price, qty, config.ORDER_TYPE)
+        await self.client.send_order(symbol, price, qty, "ASK")
 
     async def cancel_order_ids(self, order_ids: list[int]) -> None:
         await self.client.cancel_orders(order_ids)

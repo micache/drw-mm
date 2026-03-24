@@ -80,7 +80,7 @@ class SimulatorBot(Client):
         except asyncio.TimeoutError:
             logger.warning("external source refresh timed out during startup; continuing")
         self._recompute_fair_values()
-        logger.info("startup fair values count=%d", len(self.state_store.state.fair_values))
+        logger.info("startup fair values count=%d dry_run=%s", len(self.state_store.state.fair_values), config.DRY_RUN)
         self.reporter.write_all(self.state_store.state)
 
         tasks = [
@@ -195,17 +195,24 @@ class SimulatorBot(Client):
 
     async def _strategy_loop(self) -> None:
         while True:
-            await self._strategy_event.wait()
+            try:
+                await asyncio.wait_for(self._strategy_event.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass
             self._strategy_event.clear()
             orders = self.router.evaluate(self.state_store.state)
             for o in orders:
-                if config.DRY_RUN:
-                    logger.info("DRY_RUN order=%s", o)
-                    continue
-                if o.side == "buy":
-                    await self.adapter.place_bid(o.symbol, o.price, o.qty)
-                else:
-                    await self.adapter.place_ask(o.symbol, o.price, o.qty)
+                try:
+                    if config.DRY_RUN:
+                        logger.info("DRY_RUN order=%s", o)
+                        continue
+                    if o.side == "buy":
+                        await self.adapter.place_bid(o.symbol, o.price, o.qty)
+                    else:
+                        await self.adapter.place_ask(o.symbol, o.price, o.qty)
+                    logger.info("placed order side=%s symbol=%s px=%s qty=%s reason=%s", o.side, o.symbol, o.price, o.qty, o.reason)
+                except Exception as exc:
+                    logger.warning("order placement failed for %s: %s", o, exc)
 
     async def _refresh_external_sources(self) -> None:
         scoreboard = await self.ncaa_source.fetch_scoreboard()
