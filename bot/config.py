@@ -5,7 +5,7 @@ from pathlib import Path
 
 GAME_ID = int(os.getenv("DRW_GAME_ID", "0"))
 TOKEN = os.getenv("DRW_TOKEN", "")
-BASE_URL = os.getenv("DRW_BASE_URL", "https://games.drw")
+BASE_URL = os.getenv("DRW_BASE_URL", "https://games.drw.com")
 
 PLAYOFFSTATUS_URL = os.getenv(
     "PLAYOFFSTATUS_URL",
@@ -25,7 +25,7 @@ PLAYOFFSTATUS_REFRESH_SECONDS = float(os.getenv("PLAYOFFSTATUS_REFRESH_SECONDS",
 NCAA_REFRESH_LIVE_SECONDS = float(os.getenv("NCAA_REFRESH_LIVE_SECONDS", "20"))
 NCAA_REFRESH_IDLE_SECONDS = float(os.getenv("NCAA_REFRESH_IDLE_SECONDS", "120"))
 LIVE_ODDS_REFRESH_SECONDS = float(os.getenv("LIVE_ODDS_REFRESH_SECONDS", "10"))
-CSV_DEBOUNCE_SECONDS = float(os.getenv("CSV_DEBOUNCE_SECONDS", "1"))
+CSV_DEBOUNCE_SECONDS = float(os.getenv("CSV_DEBOUNCE_SECONDS", "10"))
 
 MAX_ABS_POSITION = int(os.getenv("MAX_ABS_POSITION", "100"))
 LIVE_MAX_POSITION = int(os.getenv("LIVE_MAX_POSITION", "10"))
