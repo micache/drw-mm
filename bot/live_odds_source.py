@@ -23,11 +23,14 @@ class LiveOddsSource:
             return []
         url = f"{self.base_url}/sports/{self.sport_key}/odds"
         params = {"apiKey": self.api_key, "regions": "us", "markets": "h2h", "oddsFormat": "decimal"}
-        async with self.session.get(url, params=params) as resp:
-            if resp.status >= 400:
-                return []
-            data = await resp.json()
-            return data if isinstance(data, list) else []
+        try:
+            async with self.session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status >= 400:
+                    return []
+                data = await resp.json()
+                return data if isinstance(data, list) else []
+        except Exception:
+            return []
 
     def extract_moneyline_probs(self, raw_game: dict[str, Any]) -> LiveGameProb | None:
         home = raw_game.get("home_team")

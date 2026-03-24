@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
 
 from bot.models import BotState, TeamFairValue
-
-if TYPE_CHECKING:
-    from bot.team_mapping import TeamMapper
 
 SETTLEMENT_BY_ROUND = {
     "FIRST_FOUR": 0.0,
@@ -21,19 +17,13 @@ SETTLEMENT_BY_ROUND = {
 
 
 class FairValueEngine:
-    def __init__(self, mapper: TeamMapper | None = None) -> None:
-        self.mapper = mapper
-
     def recompute_all(self, state: BotState) -> dict[str, TeamFairValue]:
         now = time.time()
         out: dict[str, TeamFairValue] = {}
         for symbol, contract in state.contracts.items():
-            # Use mapper to resolve the correct normalized name if available
-            norm = self.mapper.symbol_to_norm(symbol) if self.mapper else contract.normalized_team_name
+            norm = contract.normalized_team_name
             team_state = state.team_states.get(norm)
             team_prob = state.team_probs.get(norm)
-            if not team_prob and not team_state:
-                continue
 
             fixed = self.compute_fixed_fv(team_state)
             baseline = self.compute_baseline_fv(team_prob)

@@ -19,10 +19,13 @@ class PlayoffStatusSource:
         self._last_good: dict[str, TeamProbabilities] = {}
 
     async def refresh(self) -> dict[str, TeamProbabilities]:
-        async with self.session.get(self.url) as resp:
-            if resp.status >= 400:
-                return self._last_good
-            html = await resp.text()
+        try:
+            async with self.session.get(self.url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status >= 400:
+                    return self._last_good
+                html = await resp.text()
+        except Exception:
+            return self._last_good
 
         table_csv = self._html_table_to_csv(html)
         if not table_csv:

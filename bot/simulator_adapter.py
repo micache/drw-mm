@@ -83,7 +83,7 @@ class SimulatorAdapter:
             symbol: ContractMeta(
                 display_symbol=symbol,
                 team_name=symbol,
-                normalized_team_name=symbol.lower(),
+                normalized_team_name=symbol.lower().replace("_", " ").replace("-", " ").strip(),
             )
             for symbol in books
         }

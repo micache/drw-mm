@@ -42,7 +42,7 @@ class SimulatorBot(Client):
         self.ncaa_source = NcaaSource(session, config.NCAA_API_BASE, self.mapper)
         self.playoff_source = PlayoffStatusSource(session, config.PLAYOFFSTATUS_URL, self.mapper)
         self.live_odds_source = LiveOddsSource(session, config.ODDS_API_BASE, config.ODDS_API_KEY, config.ODDS_SPORT_KEY, self.mapper)
-        self.fv_engine = FairValueEngine(self.mapper)
+        self.fv_engine = FairValueEngine()
         self.reporter = Reporter()
         risk = RiskEngine()
         self.router = StrategyRouter(ArbitrageStrategy(risk), LiveStrategy(risk))
@@ -54,7 +54,9 @@ class SimulatorBot(Client):
         except Exception:
             logger.info("register skipped/fail; continuing")
 
+        logger.info("bootstrapping simulator snapshots...")
         positions, orders, books = await self.adapter.bootstrap()
+        logger.info("bootstrap complete: positions=%d orders=%d books=%d", len(positions), len(orders), len(books))
         self.state_store.apply_account_snapshot(self.cash, self.margin, positions)
         self.state_store.apply_open_orders_snapshot(orders)
         self.state_store.apply_orderbook_snapshot(books)
@@ -64,8 +66,12 @@ class SimulatorBot(Client):
             self.mapper.register_symbol(symbol, meta.team_name)
         self.state_store.state.contracts = contracts
 
-        await self._refresh_external_sources()
+        try:
+            await asyncio.wait_for(self._refresh_external_sources(), timeout=12)
+        except asyncio.TimeoutError:
+            logger.warning("external source refresh timed out during startup; continuing")
         self._recompute_fair_values()
+        logger.info("startup fair values count=%d", len(self.state_store.state.fair_values))
         self.reporter.write_all(self.state_store.state)
 
         tasks = [
@@ -76,7 +82,12 @@ class SimulatorBot(Client):
             asyncio.create_task(self._reporter_loop()),
             asyncio.create_task(self._strategy_loop()),
         ]
-        await asyncio.gather(*tasks)
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def on_notification(self, message: str) -> None:
         logger.info("notification: %s", message)
@@ -136,44 +147,34 @@ class SimulatorBot(Client):
 
     async def _ncaa_refresh_loop(self) -> None:
         while True:
-            try:
-                scoreboard = await self.ncaa_source.fetch_scoreboard()
-                team_states = self.ncaa_source.refresh_team_live_status(scoreboard)
-                self.state_store.apply_team_states(team_states)
-                self._recompute_fair_values()
-                self._strategy_event.set()
-                delay = config.NCAA_REFRESH_LIVE_SECONDS if any(x.in_live_game for x in team_states.values()) else config.NCAA_REFRESH_IDLE_SECONDS
-            except Exception as e:
-                logger.warning("NCAA refresh failed: %s; retrying in %s seconds", e, config.NCAA_REFRESH_IDLE_SECONDS)
-                delay = config.NCAA_REFRESH_IDLE_SECONDS
+            scoreboard = await self.ncaa_source.fetch_scoreboard()
+            team_states = self.ncaa_source.refresh_team_live_status(scoreboard)
+            self.state_store.apply_team_states(team_states)
+            self._recompute_fair_values()
+            self._strategy_event.set()
+            delay = config.NCAA_REFRESH_LIVE_SECONDS if any(x.in_live_game for x in team_states.values()) else config.NCAA_REFRESH_IDLE_SECONDS
             await asyncio.sleep(delay)
 
     async def _playoff_refresh_loop(self) -> None:
         while True:
-            try:
-                probs = await self.playoff_source.refresh()
-                self.state_store.apply_probabilities(probs)
-                self._recompute_fair_values()
-                self._strategy_event.set()
-            except Exception as e:
-                logger.warning("Playoff refresh failed: %s; retrying in %s seconds", e, config.PLAYOFFSTATUS_REFRESH_SECONDS)
+            probs = await self.playoff_source.refresh()
+            self.state_store.apply_probabilities(probs)
+            self._recompute_fair_values()
+            self._strategy_event.set()
             await asyncio.sleep(config.PLAYOFFSTATUS_REFRESH_SECONDS)
 
     async def _live_odds_refresh_loop(self) -> None:
         while True:
-            try:
-                raws = await self.live_odds_source.fetch_live_games_odds()
-                live: dict[str, LiveGameProb] = {}
-                for raw in raws:
-                    parsed = self.live_odds_source.extract_moneyline_probs(raw)
-                    if not parsed:
-                        continue
-                    live[parsed.game_id] = parsed
-                self.state_store.apply_live_game_probs(live)
-                self._recompute_fair_values()
-                self._strategy_event.set()
-            except Exception as e:
-                logger.warning("Live odds refresh failed: %s; retrying in %s seconds", e, config.LIVE_ODDS_REFRESH_SECONDS)
+            raws = await self.live_odds_source.fetch_live_games_odds()
+            live: dict[str, LiveGameProb] = {}
+            for raw in raws:
+                parsed = self.live_odds_source.extract_moneyline_probs(raw)
+                if not parsed:
+                    continue
+                live[parsed.game_id] = parsed
+            self.state_store.apply_live_game_probs(live)
+            self._recompute_fair_values()
+            self._strategy_event.set()
             await asyncio.sleep(config.LIVE_ODDS_REFRESH_SECONDS)
 
     async def _reporter_loop(self) -> None:
@@ -198,21 +199,9 @@ class SimulatorBot(Client):
                     await self.adapter.place_ask(o.symbol, o.price, o.qty)
 
     async def _refresh_external_sources(self) -> None:
-        try:
-            scoreboard = await asyncio.wait_for(self.ncaa_source.fetch_scoreboard(), timeout=15)
-            self.state_store.apply_team_states(self.ncaa_source.refresh_team_live_status(scoreboard))
-        except asyncio.TimeoutError:
-            logger.warning("NCAA scoreboard fetch timed out; continuing without NCAA data")
-        except Exception as e:
-            logger.warning("NCAA scoreboard fetch failed: %s; continuing", e)
-        
-        try:
-            probs = await asyncio.wait_for(self.playoff_source.refresh(), timeout=15)
-            self.state_store.apply_probabilities(probs)
-        except asyncio.TimeoutError:
-            logger.warning("Playoff status fetch timed out; continuing without playoff data")
-        except Exception as e:
-            logger.warning("Playoff status fetch failed: %s; continuing", e)
+        scoreboard = await self.ncaa_source.fetch_scoreboard()
+        self.state_store.apply_team_states(self.ncaa_source.refresh_team_live_status(scoreboard))
+        self.state_store.apply_probabilities(await self.playoff_source.refresh())
 
     def _recompute_fair_values(self) -> None:
         self.state_store.apply_fair_values(self.fv_engine.recompute_all(self.state_store.state))

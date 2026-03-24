@@ -48,11 +48,14 @@ class NcaaSource:
     async def fetch_scoreboard(self, date_or_path: str | None = None) -> list[dict[str, Any]]:
         date_or_path = date_or_path or dt.date.today().isoformat()
         url = f"{self.base_url}/scoreboard/basketball-men/d1/{date_or_path}"
-        async with self.session.get(url) as resp:
-            if resp.status >= 400:
-                return []
-            payload = await resp.json()
-        return payload if isinstance(payload, list) else payload.get("games", [])
+        try:
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status >= 400:
+                    return []
+                payload = await resp.json()
+            return payload if isinstance(payload, list) else payload.get("games", [])
+        except Exception:
+            return []
 
     def extract_live_games(self, scoreboard_json: list[dict[str, Any]]) -> list[NcaaGame]:
         return [g for g in self._extract_games(scoreboard_json) if g.game_state.lower() in {"live", "in_progress"}]
@@ -62,10 +65,13 @@ class NcaaSource:
 
     async def fetch_game(self, game_id: str) -> dict[str, Any]:
         url = f"{self.base_url}/game/{game_id}"
-        async with self.session.get(url) as resp:
-            if resp.status >= 400:
-                return {}
-            return await resp.json()
+        try:
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status >= 400:
+                    return {}
+                return await resp.json()
+        except Exception:
+            return {}
 
     def refresh_team_live_status(self, scoreboard: list[dict[str, Any]]) -> dict[str, TeamTournamentState]:
         now = time.time()
