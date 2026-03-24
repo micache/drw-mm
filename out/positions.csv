@@ -1,0 +1,7 @@
+timestamp,display_symbol,team_name,qty,avg_entry_price,best_bid,best_ask,mark_price,fair_value,settlement_if_known,unrealized_pnl,realized_pnl,current_round,status,fv_mode
+1774342256.1208751,UConn,UConn,4,0.0,8.48,8.69,8.585,,,34.34,0.0,,alive,baseline
+1774342256.1208751,Arkansas,Arkansas,-30,0.0,5.58,8.16,6.87,,,-206.1,0.0,,alive,baseline
+1774342256.1208751,Missouri,Missouri,-100,0.0,0.01,1.65,0.83,,,-83.0,0.0,,alive,baseline
+1774342256.1208751,Wisconsin,Wisconsin,-20,0.0,0.01,0.44,0.225,,,-4.5,0.0,,alive,baseline
+1774342256.1208751,Santa Clara,Santa Clara,-40,0.0,-0.0,0.47,0.235,,,-9.399999999999999,0.0,,alive,baseline
+1774342256.1208751,North Carolina,North Carolina,-90,0.0,-0.0,1.0,0.5,,,-45.0,0.0,,alive,baseline
