@@ -5,7 +5,7 @@ from pathlib import Path
 
 GAME_ID = int(os.getenv("DRW_GAME_ID", "0"))
 TOKEN = os.getenv("DRW_TOKEN", "")
-BASE_URL = os.getenv("DRW_BASE_URL", "https://games.drw")
+BASE_URL = os.getenv("DRW_BASE_URL", "https://games.drw.com")
 
 PLAYOFFSTATUS_URL = os.getenv(
     "PLAYOFFSTATUS_URL",
