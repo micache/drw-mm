@@ -5,7 +5,7 @@ from pathlib import Path
 
 GAME_ID = int(os.getenv("DRW_GAME_ID", "0"))
 TOKEN = os.getenv("DRW_TOKEN", "")
-BASE_URL = os.getenv("DRW_BASE_URL", "https://games.drw")
+BASE_URL = os.getenv("DRW_BASE_URL", "https://games.drw.com")
 
 PLAYOFFSTATUS_URL = os.getenv(
     "PLAYOFFSTATUS_URL",
@@ -31,8 +31,6 @@ MAX_ABS_POSITION = int(os.getenv("MAX_ABS_POSITION", "100"))
 LIVE_MAX_POSITION = int(os.getenv("LIVE_MAX_POSITION", "10"))
 ELIMINATED_MIN_EDGE = float(os.getenv("ELIMINATED_MIN_EDGE", "0.25"))
 BASKET_MIN_EDGE = float(os.getenv("BASKET_MIN_EDGE", "1.0"))
-ENABLE_BASKET_ARBITRAGE = os.getenv("ENABLE_BASKET_ARBITRAGE", "false").lower() == "true"
-BASKET_MAX_NET_PER_SYMBOL = int(os.getenv("BASKET_MAX_NET_PER_SYMBOL", "1"))
 LIVE_ENTRY_BUFFER = float(os.getenv("LIVE_ENTRY_BUFFER", "1.0"))
 ODDS_FRESHNESS_SECONDS = float(os.getenv("ODDS_FRESHNESS_SECONDS", "20"))
 ODDS_JUMP_CIRCUIT_BREAKER = float(os.getenv("ODDS_JUMP_CIRCUIT_BREAKER", "0.04"))

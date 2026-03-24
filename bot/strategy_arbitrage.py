@@ -48,14 +48,9 @@ class ArbitrageStrategy:
         return out
 
     def basket_arbitrage(self, state: BotState) -> list[CandidateOrder]:
-        if not config.ENABLE_BASKET_ARBITRAGE:
-            return []
         if len(state.contracts) != 68:
             return []
         qty = 1
-        # v1 safety: do not repeatedly stack basket exposure.
-        if any(abs(state.positions_raw.get(symbol, 0)) >= config.BASKET_MAX_NET_PER_SYMBOL for symbol in state.contracts):
-            return []
         long_total = 0.0
         short_total = 0.0
         long_orders: list[CandidateOrder] = []
@@ -66,8 +61,6 @@ class ArbitrageStrategy:
             if not book or not book.best_ask or not book.best_bid:
                 return []
             if book.best_ask.qty < qty or book.best_bid.qty < qty:
-                return []
-            if not (0.0 < book.best_bid.price <= 64.0 and 0.0 < book.best_ask.price <= 64.0):
                 return []
             long_total += book.best_ask.price
             short_total += book.best_bid.price
