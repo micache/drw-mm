@@ -30,25 +30,19 @@ class Reporter:
             rows.append([
                 now,
                 p.display_symbol,
-                p.team_name,
                 p.qty,
-                p.avg_entry_price,
                 p.best_bid,
                 p.best_ask,
                 p.mark_price,
                 p.fair_value,
-                p.settlement_if_known,
                 p.unrealized_pnl,
                 p.realized_pnl,
-                p.current_round,
                 p.status,
-                "live" if p.fair_value is not None else "baseline",
             ])
         self._atomic_csv(
             config.POSITIONS_CSV,
             [
-                "timestamp", "display_symbol", "team_name", "qty", "avg_entry_price", "best_bid", "best_ask",
-                "mark_price", "fair_value", "settlement_if_known", "unrealized_pnl", "realized_pnl", "current_round", "status", "fv_mode",
+                "timestamp", "display_symbol", "qty", "best_bid", "best_ask", "mark_price", "fair_value", "unrealized_pnl", "realized_pnl", "status",
             ],
             rows,
         )

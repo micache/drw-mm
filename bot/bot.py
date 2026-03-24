@@ -21,7 +21,7 @@ from bot.strategy_arbitrage import ArbitrageStrategy
 from bot.strategy_live import LiveStrategy
 from bot.strategy_router import StrategyRouter
 from bot.team_mapping import TeamMapper
-from bot.models import FillView, LiveGameProb, OrderBook, OrderView
+from bot.models import ContractMeta, FillView, LiveGameProb, OrderBook, OrderView
 
 ROOT = Path(__file__).resolve().parents[1]
 CLIENT_DIR = ROOT / "trading-simulator-client"
@@ -61,9 +61,18 @@ class SimulatorBot(Client):
         self.state_store.apply_open_orders_snapshot(orders)
         self.state_store.apply_orderbook_snapshot(books)
 
-        contracts = self.adapter.contracts_from_books(books)
-        for symbol, meta in contracts.items():
+        raw_contracts = self.adapter.contracts_from_books(books)
+        contracts: dict[str, ContractMeta] = {}
+        for symbol, meta in raw_contracts.items():
+            norm = self.mapper.normalize(meta.team_name)
             self.mapper.register_symbol(symbol, meta.team_name)
+            contracts[symbol] = ContractMeta(
+                display_symbol=meta.display_symbol,
+                team_name=meta.team_name,
+                normalized_team_name=norm,
+                seed=meta.seed,
+                region=meta.region,
+            )
         self.state_store.state.contracts = contracts
 
         try:

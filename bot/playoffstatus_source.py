@@ -127,7 +127,11 @@ class PlayoffStatusSource:
     @staticmethod
     def _parse_pct(raw: str) -> float:
         cell = raw.strip().replace("%", "")
-        if not cell or cell in {"^", "X", "x"}:
+        if not cell:
+            return 0.0
+        if cell == "^":
+            return 1.0
+        if cell in {"X", "x"}:
             return 0.0
         if cell.startswith("<"):
             return 0.005
