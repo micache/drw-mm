@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 def _clean(value: str) -> str:
     s = value.lower().strip()
-    s = s.replace("st.", "state").replace(" st ", " state ")
+    s = s.replace("st.", "st")
     s = s.replace("saint", "st")
     s = re.sub(r"[^a-z0-9 ]+", " ", s)
     s = re.sub(r"\b(university|college)\b", "", s)
@@ -22,8 +22,16 @@ class TeamMapper:
         "uconn": "connecticut",
         "unc": "north carolina",
         "ole miss": "mississippi",
-        "usc": "southern california",
-        "st johns": "st john s",
+        "st johns": "st johns",
+        "st john s": "st johns",
+        "iowa st": "iowa st",
+        "michigan st": "michigan st",
+        "ohio st": "ohio st",
+        "utah st": "utah st",
+        "wright st": "wright st",
+        "tennessee st": "tennessee st",
+        "north dakota st": "north dakota st",
+        "nc state": "nc state",
     })
 
     def normalize(self, name: str) -> str:
