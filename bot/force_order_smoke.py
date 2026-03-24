@@ -36,7 +36,7 @@ class ForceOrderSmokeBot(Client):
 
         qty = 1
         logging.info("Placing smoke BID: symbol=%s px=%s qty=%s", symbol, px, qty)
-        order = await self.send_order(symbol, px, qty, "BID")
+        order = await self.send_order(symbol, px, qty, "LIMIT")
         logging.info("Placed smoke order id=%s symbol=%s px=%s qty=%s", order.order_id, order.display_symbol, order.px, order.qty)
 
         await asyncio.sleep(2)
