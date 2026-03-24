@@ -5,11 +5,11 @@ from pathlib import Path
 
 GAME_ID = int(os.getenv("DRW_GAME_ID", "0"))
 TOKEN = os.getenv("DRW_TOKEN", "")
-BASE_URL = os.getenv("DRW_BASE_URL", "https://games.drw.com")
+BASE_URL = os.getenv("DRW_BASE_URL", "https://games.drw")
 
 PLAYOFFSTATUS_URL = os.getenv(
     "PLAYOFFSTATUS_URL",
-    "https://www.playoffstatus.com/ncaabasketball/ncaabasketballtourneyprob.html",
+    "https://www.playoffstatus.com/ncaabasketball/ncaabasketballtournperformprob.html",
 )
 NCAA_API_BASE = os.getenv("NCAA_API_BASE", "https://ncaa-api.henrygd.me")
 ODDS_API_BASE = os.getenv("ODDS_API_BASE", "https://api.the-odds-api.com/v4")

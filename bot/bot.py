@@ -200,8 +200,11 @@ class SimulatorBot(Client):
 
     async def _refresh_external_sources(self) -> None:
         scoreboard = await self.ncaa_source.fetch_scoreboard()
-        self.state_store.apply_team_states(self.ncaa_source.refresh_team_live_status(scoreboard))
-        self.state_store.apply_probabilities(await self.playoff_source.refresh())
+        team_states = self.ncaa_source.refresh_team_live_status(scoreboard)
+        self.state_store.apply_team_states(team_states)
+        probs = await self.playoff_source.refresh()
+        self.state_store.apply_probabilities(probs)
+        logger.info("external refresh: team_states=%d playoff_probs=%d", len(team_states), len(probs))
 
     def _recompute_fair_values(self) -> None:
         self.state_store.apply_fair_values(self.fv_engine.recompute_all(self.state_store.state))

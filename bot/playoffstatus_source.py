@@ -34,16 +34,22 @@ class PlayoffStatusSource:
         parsed: dict[str, TeamProbabilities] = {}
         now = time.time()
         for row in csv.DictReader(io.StringIO(table_csv)):
-            team = row.get("Team") or row.get("team")
+            team = row.get("Team") or row.get("team") or row.get("NCAA Basketball Tournament Performance Probabilities Team")
+            if not team:
+                # fallback: first non-empty cell likely team name
+                for value in row.values():
+                    if value and value.strip() and not value.strip().endswith('%'):
+                        team = value
+                        break
             if not team:
                 continue
             norm = self.mapper.normalize(team)
-            p_r32 = self._pct(row, ["R32", "Round 32", "R2"])
-            p_s16 = self._pct(row, ["Sweet 16", "S16"])
-            p_e8 = self._pct(row, ["Elite 8", "E8"])
-            p_f4 = self._pct(row, ["Final 4", "F4"])
-            p_final = self._pct(row, ["Final", "Title"])
-            p_champ = self._pct(row, ["Champion", "Champ"])
+            p_r32 = self._pct(row, ["R32", "Round 32", "R2", "Round 2"])
+            p_s16 = self._pct(row, ["Sweet 16", "S16", "Sweet Sixteen"])
+            p_e8 = self._pct(row, ["Elite 8", "E8", "Elite Eight"])
+            p_f4 = self._pct(row, ["Final 4", "F4", "Final Four", "Participate"])
+            p_final = self._pct(row, ["Final", "Title", "Championship Game"])
+            p_champ = self._pct(row, ["Champion", "Champ", "National Champions"])
             p_r32, p_s16, p_e8, p_f4, p_final, p_champ = self._monotonic(p_r32, p_s16, p_e8, p_f4, p_final, p_champ)
             baseline = self.compute_baseline_fv(p_r32, p_s16, p_e8, p_f4, p_final, p_champ)
             parsed[norm] = TeamProbabilities(
@@ -78,7 +84,12 @@ class PlayoffStatusSource:
         for key in keys:
             if key in row and row[key]:
                 try:
-                    return float(row[key].replace("%", "").strip()) / 100.0
+                    cell = row[key].replace("%", "").strip()
+                    if cell.upper() in {"X", "^", ""}:
+                        return 0.0
+                    if cell.startswith("<"):
+                        return 0.005
+                    return float(cell) / 100.0
                 except ValueError:
                     pass
         return 0.0
@@ -93,15 +104,32 @@ class PlayoffStatusSource:
 
     @staticmethod
     def _html_table_to_csv(html: str) -> str:
-        match = re.search(r"<table[^>]*>(.*?)</table>", html, flags=re.I | re.S)
-        if not match:
+        tables = re.findall(r"<table[^>]*>(.*?)</table>", html, flags=re.I | re.S)
+        if not tables:
             return ""
-        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", match.group(1), flags=re.I | re.S)
-        lines: list[str] = []
-        for row in rows:
-            cols = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, flags=re.I | re.S)
-            if not cols:
-                continue
-            vals = [re.sub(r"<[^>]+>", "", c).strip().replace(",", "") for c in cols]
-            lines.append(",".join(vals))
-        return "\n".join(lines)
+
+        def to_csv(table_html: str) -> str:
+            rows = re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, flags=re.I | re.S)
+            lines: list[str] = []
+            for row in rows:
+                cols = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, flags=re.I | re.S)
+                if not cols:
+                    continue
+                vals = [re.sub(r"<[^>]+>", "", c).strip().replace(",", "") for c in cols]
+                lines.append(",".join(vals))
+            return "\n".join(lines)
+
+        ranked: list[tuple[int, str]] = []
+        for table in tables:
+            plain = re.sub(r"<[^>]+>", " ", table)
+            score = 0
+            for token in ["National Champions", "Championship Game", "Final Four", "Elite Eight", "Sweet Sixteen", "Round 2"]:
+                if token.lower() in plain.lower():
+                    score += 1
+            ranked.append((score, table))
+
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        best_score, best_table = ranked[0]
+        if best_score == 0:
+            return ""
+        return to_csv(best_table)
