@@ -37,3 +37,13 @@ python -m bot.main
 ```
 
 CSV outputs are written to `./out/`.
+
+
+### Smoke test: force one order
+To verify credentials and placement plumbing quickly:
+
+```bash
+python -m bot.force_order_smoke
+```
+
+This places one small BID (qty=1) on the first available symbol, then cancels it.

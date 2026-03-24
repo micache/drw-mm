@@ -13,6 +13,7 @@ from bot.fair_value_engine import FairValueEngine
 from bot.live_odds_source import LiveOddsSource
 from bot.ncaa_source import NcaaSource
 from bot.playoffstatus_source import PlayoffStatusSource
+from bot.pnl_engine import PnlEngine
 from bot.reporter import Reporter
 from bot.risk_engine import RiskEngine
 from bot.simulator_adapter import SimulatorAdapter
@@ -44,6 +45,7 @@ class SimulatorBot(Client):
         self.live_odds_source = LiveOddsSource(session, config.ODDS_API_BASE, config.ODDS_API_KEY, config.ODDS_SPORT_KEY, self.mapper)
         self.fv_engine = FairValueEngine()
         self.reporter = Reporter()
+        self.pnl_engine = PnlEngine()
         risk = RiskEngine()
         self.router = StrategyRouter(ArbitrageStrategy(risk), LiveStrategy(risk))
         self._strategy_event = asyncio.Event()
@@ -116,6 +118,7 @@ class SimulatorBot(Client):
                 remaining_qty=f.remaining_qty,
             )
             self.state_store.apply_fill(fill)
+            self.pnl_engine.apply_fill(fill, self.state_store.state)
         self._strategy_event.set()
 
     async def on_orderbook_updates(self, order_books) -> None:

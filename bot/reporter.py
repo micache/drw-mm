@@ -25,24 +25,21 @@ class Reporter:
 
     def _write_positions(self, positions) -> None:
         rows = []
-        now = time.time()
         for p in positions:
             rows.append([
-                now,
                 p.display_symbol,
                 p.qty,
+                p.avg_entry_price,
                 p.best_bid,
                 p.best_ask,
                 p.mark_price,
                 p.fair_value,
                 p.unrealized_pnl,
-                p.realized_pnl,
-                p.status,
             ])
         self._atomic_csv(
             config.POSITIONS_CSV,
             [
-                "timestamp", "display_symbol", "qty", "best_bid", "best_ask", "mark_price", "fair_value", "unrealized_pnl", "realized_pnl", "status",
+                "display_symbol", "qty", "avg_entry_price", "best_bid", "best_ask", "mark_price", "fair_value", "unrealized_pnl",
             ],
             rows,
         )
