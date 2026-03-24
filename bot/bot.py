@@ -84,6 +84,7 @@ class SimulatorBot(Client):
         self._recompute_fair_values()
         logger.info("startup fair values count=%d dry_run=%s", len(self.state_store.state.fair_values), config.DRY_RUN)
         self.reporter.write_all(self.state_store.state)
+        self._strategy_event.set()
 
         tasks = [
             asyncio.create_task(self._account_resync_loop()),
@@ -148,45 +149,58 @@ class SimulatorBot(Client):
 
     async def _account_resync_loop(self) -> None:
         while True:
-            positions = await self.adapter.sync_positions()
-            orders = await self.adapter.sync_open_orders()
-            books = await self.adapter.sync_order_books()
-            self.state_store.apply_account_snapshot(self.cash, self.margin, positions)
-            self.state_store.apply_open_orders_snapshot(orders)
-            self.state_store.apply_orderbook_snapshot(books)
-            self._strategy_event.set()
+            try:
+                positions = await self.adapter.sync_positions()
+                orders = await self.adapter.sync_open_orders()
+                books = await self.adapter.sync_order_books()
+                self.state_store.apply_account_snapshot(self.cash, self.margin, positions)
+                self.state_store.apply_open_orders_snapshot(orders)
+                self.state_store.apply_orderbook_snapshot(books)
+                self._strategy_event.set()
+            except Exception as exc:
+                logger.warning("account resync failed: %s", exc)
             await asyncio.sleep(config.ACCOUNT_RESYNC_SECONDS)
 
     async def _ncaa_refresh_loop(self) -> None:
         while True:
-            scoreboard = await self.ncaa_source.fetch_scoreboard()
-            team_states = self.ncaa_source.refresh_team_live_status(scoreboard)
-            self.state_store.apply_team_states(team_states)
-            self._recompute_fair_values()
-            self._strategy_event.set()
-            delay = config.NCAA_REFRESH_LIVE_SECONDS if any(x.in_live_game for x in team_states.values()) else config.NCAA_REFRESH_IDLE_SECONDS
+            delay = config.NCAA_REFRESH_IDLE_SECONDS
+            try:
+                scoreboard = await self.ncaa_source.fetch_scoreboard()
+                team_states = self.ncaa_source.refresh_team_live_status(scoreboard)
+                self.state_store.apply_team_states(team_states)
+                self._recompute_fair_values()
+                self._strategy_event.set()
+                delay = config.NCAA_REFRESH_LIVE_SECONDS if any(x.in_live_game for x in team_states.values()) else config.NCAA_REFRESH_IDLE_SECONDS
+            except Exception as exc:
+                logger.warning("ncaa refresh failed: %s", exc)
             await asyncio.sleep(delay)
 
     async def _playoff_refresh_loop(self) -> None:
         while True:
-            probs = await self.playoff_source.refresh()
-            self.state_store.apply_probabilities(probs)
-            self._recompute_fair_values()
-            self._strategy_event.set()
+            try:
+                probs = await self.playoff_source.refresh()
+                self.state_store.apply_probabilities(probs)
+                self._recompute_fair_values()
+                self._strategy_event.set()
+            except Exception as exc:
+                logger.warning("playoff refresh failed: %s", exc)
             await asyncio.sleep(config.PLAYOFFSTATUS_REFRESH_SECONDS)
 
     async def _live_odds_refresh_loop(self) -> None:
         while True:
-            raws = await self.live_odds_source.fetch_live_games_odds()
-            live: dict[str, LiveGameProb] = {}
-            for raw in raws:
-                parsed = self.live_odds_source.extract_moneyline_probs(raw)
-                if not parsed:
-                    continue
-                live[parsed.game_id] = parsed
-            self.state_store.apply_live_game_probs(live)
-            self._recompute_fair_values()
-            self._strategy_event.set()
+            try:
+                raws = await self.live_odds_source.fetch_live_games_odds()
+                live: dict[str, LiveGameProb] = {}
+                for raw in raws:
+                    parsed = self.live_odds_source.extract_moneyline_probs(raw)
+                    if not parsed:
+                        continue
+                    live[parsed.game_id] = parsed
+                self.state_store.apply_live_game_probs(live)
+                self._recompute_fair_values()
+                self._strategy_event.set()
+            except Exception as exc:
+                logger.warning("live odds refresh failed: %s", exc)
             await asyncio.sleep(config.LIVE_ODDS_REFRESH_SECONDS)
 
     async def _reporter_loop(self) -> None:
@@ -203,7 +217,11 @@ class SimulatorBot(Client):
             except asyncio.TimeoutError:
                 pass
             self._strategy_event.clear()
-            orders = self.router.evaluate(self.state_store.state)
+            try:
+                orders = self.router.evaluate(self.state_store.state)
+            except Exception as exc:
+                logger.warning("strategy evaluation failed: %s", exc)
+                continue
             for o in orders:
                 try:
                     if config.DRY_RUN:

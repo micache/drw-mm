@@ -15,6 +15,10 @@ from trading_client import Client, create_session  # type: ignore
 
 
 class ForceOrderSmokeBot(Client):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.done = asyncio.Event()
+
     async def on_start(self) -> None:
         try:
             await self.register()
@@ -24,6 +28,7 @@ class ForceOrderSmokeBot(Client):
         books = await self.get_order_books()
         if not books:
             logging.error("No books available, cannot place smoke order")
+            self.done.set()
             return
 
         symbol, book = next(iter(books.items()))
@@ -45,7 +50,7 @@ class ForceOrderSmokeBot(Client):
 
         # keep a short window for observing websocket callbacks
         await asyncio.sleep(2)
-        raise SystemExit(0)
+        self.done.set()
 
 
 async def main() -> None:
@@ -57,8 +62,16 @@ async def main() -> None:
     async with create_session() as session:
         bot = ForceOrderSmokeBot(session=session, game_id=game_id, token=token, base_url=base_url)
         logging.info("web view: %s", bot.web_url)
-        await bot.start()
+
+        run_task = asyncio.create_task(bot.start())
+        await bot.done.wait()
+        run_task.cancel()
+        await asyncio.gather(run_task, return_exceptions=True)
+        logging.info("Smoke test completed successfully")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Smoke test interrupted")
