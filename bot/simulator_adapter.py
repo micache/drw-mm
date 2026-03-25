@@ -12,18 +12,21 @@ from bot.models import BookLevel, ContractMeta, FillView, OrderBook, OrderView
 class SimulatorAdapter:
     client: Any
 
-    async def bootstrap(self) -> tuple[dict[str, int], dict[int, OrderView], dict[str, OrderBook]]:
-        await self.client.update_positions()
-        await self.client.update_order_books()
-        await self.client.update_notifications()
-        positions = dict(self.client.positions)
-        orders = await self.sync_open_orders()
-        books = await self.sync_order_books()
-        return positions, orders, books
+    async def sync_account(self) -> tuple[float, float, dict[str, int], float | None, dict[str, float]]:
+        try:
+            data = await self.client._get("account")
+        except Exception:
+            await self.client.update_positions()
+            return self.client.cash, self.client.margin, dict(self.client.positions), None, {}
 
-    async def sync_positions(self) -> dict[str, int]:
-        await self.client.update_positions()
-        return dict(self.client.positions)
+        cash = float(data.get("cash", 0.0))
+        margin = float(data.get("margin", 0.0))
+        positions, avg_entries = _parse_account_positions(data.get("positions", {}))
+        total_pnl = _extract_total_pnl(data)
+        self.client.cash = cash
+        self.client.margin = margin
+        self.client.positions = positions
+        return cash, margin, positions, total_pnl, avg_entries
 
     async def sync_open_orders(self) -> dict[int, OrderView]:
         raw = await self.client.get_open_orders()
@@ -43,6 +46,29 @@ class SimulatorAdapter:
                 last_updated_ts=now,
             )
         return out
+
+    async def sync_fills(self) -> list[FillView]:
+        data = await self.client._get("fills")
+        if not isinstance(data, list):
+            return []
+        fills: list[FillView] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("display_symbol", ""))
+            fills.append(
+                FillView(
+                    timestamp=float(item.get("timestamp", 0.0)),
+                    order_id=int(item.get("order_id", 0)),
+                    display_symbol=symbol,
+                    team_name=symbol,
+                    price=float(item.get("price", 0.0)),
+                    traded_qty=int(item.get("traded_quantity", item.get("quantity", 0))),
+                    remaining_qty=int(item.get("remaining_quantity", 0)),
+                )
+            )
+        fills.sort(key=lambda x: (x.timestamp, x.order_id))
+        return fills
 
     async def sync_order_books(self) -> dict[str, OrderBook]:
         raw = await self.client.get_order_books()
@@ -87,3 +113,34 @@ class SimulatorAdapter:
             )
             for symbol in books
         }
+
+
+def _extract_total_pnl(account: dict[str, Any]) -> float | None:
+    for key in ("total_pnl", "pnl_total", "pnl", "mark_to_market_pnl", "mtm_pnl"):
+        value = account.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[str, float]]:
+    if not isinstance(raw_positions, dict):
+        return {}, {}
+    positions: dict[str, int] = {}
+    avg_entries: dict[str, float] = {}
+    for symbol, value in raw_positions.items():
+        qty = 0
+        avg: float | None = None
+        if isinstance(value, dict):
+            qty = int(value.get("qty", value.get("quantity", value.get("position", 0))))
+            avg_val = value.get("avg_entry_price", value.get("average_price", value.get("avg_price", value.get("cost_basis"))))
+            if isinstance(avg_val, (int, float)):
+                avg = float(avg_val)
+        elif isinstance(value, (int, float)):
+            qty = int(value)
+        if qty == 0:
+            continue
+        positions[str(symbol)] = qty
+        if avg is not None:
+            avg_entries[str(symbol)] = avg
+    return positions, avg_entries

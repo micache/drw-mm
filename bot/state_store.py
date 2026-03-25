@@ -9,12 +9,24 @@ class StateStore:
     def __init__(self) -> None:
         self.state = BotState()
 
-    def apply_account_snapshot(self, cash: float, margin: float, positions: dict[str, int]) -> None:
+    def apply_account_snapshot(
+        self,
+        cash: float,
+        margin: float,
+        positions: dict[str, int],
+        total_pnl: float | None = None,
+        avg_entries: dict[str, float] | None = None,
+    ) -> None:
         self.state.cash = cash
         self.state.margin = margin
         if self.state.initial_cash is None:
             self.state.initial_cash = cash
+        self.state.server_total_pnl = total_pnl
         self.state.positions_raw = {k: v for k, v in positions.items() if v != 0}
+        if avg_entries:
+            for symbol, avg in avg_entries.items():
+                if symbol in self.state.positions_raw:
+                    self.state.avg_entry_by_symbol[symbol] = avg
         self.state.mark_dirty("account")
         self.state.set_source_timestamp("account", time.time())
 
