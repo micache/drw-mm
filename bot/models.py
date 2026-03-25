@@ -199,6 +199,7 @@ class BotState:
     cash: float = 0.0
     margin: float = 0.0
     initial_cash: float | None = None
+    server_total_pnl: float | None = None
     positions_raw: dict[str, int] = field(default_factory=dict)
     open_orders: dict[int, OrderView] = field(default_factory=dict)
     fills: list[FillView] = field(default_factory=list)

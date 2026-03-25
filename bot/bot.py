@@ -57,9 +57,11 @@ class SimulatorBot(Client):
             logger.info("register skipped/fail; continuing")
 
         logger.info("bootstrapping simulator snapshots...")
-        positions, orders, books = await self.adapter.bootstrap()
+        cash, margin, positions, total_pnl = await self.adapter.sync_account()
+        orders = await self.adapter.sync_open_orders()
+        books = await self.adapter.sync_order_books()
         logger.info("bootstrap complete: positions=%d orders=%d books=%d", len(positions), len(orders), len(books))
-        self.state_store.apply_account_snapshot(self.cash, self.margin, positions)
+        self.state_store.apply_account_snapshot(cash, margin, positions, total_pnl=total_pnl)
         self.state_store.apply_open_orders_snapshot(orders)
         self.state_store.apply_orderbook_snapshot(books)
 
@@ -151,10 +153,10 @@ class SimulatorBot(Client):
     async def _account_resync_loop(self) -> None:
         while True:
             try:
-                positions = await self.adapter.sync_positions()
+                cash, margin, positions, total_pnl = await self.adapter.sync_account()
                 orders = await self.adapter.sync_open_orders()
                 books = await self.adapter.sync_order_books()
-                self.state_store.apply_account_snapshot(self.cash, self.margin, positions)
+                self.state_store.apply_account_snapshot(cash, margin, positions, total_pnl=total_pnl)
                 self.state_store.apply_open_orders_snapshot(orders)
                 self.state_store.apply_orderbook_snapshot(books)
                 self._strategy_event.set()
@@ -240,7 +242,9 @@ class SimulatorBot(Client):
         while True:
             try:
                 initial_cash = self.state_store.state.initial_cash or 0.0
-                total_pnl = self.state_store.state.cash - initial_cash
+                total_pnl = self.state_store.state.server_total_pnl
+                if total_pnl is None:
+                    total_pnl = self.state_store.state.cash - initial_cash
                 logger.info(
                     "account_summary cash=%.2f margin=%.2f pnl_total=%.2f positions=%d",
                     self.state_store.state.cash,

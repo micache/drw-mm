@@ -12,18 +12,21 @@ from bot.models import BookLevel, ContractMeta, FillView, OrderBook, OrderView
 class SimulatorAdapter:
     client: Any
 
-    async def bootstrap(self) -> tuple[dict[str, int], dict[int, OrderView], dict[str, OrderBook]]:
-        await self.client.update_positions()
-        await self.client.update_order_books()
-        await self.client.update_notifications()
-        positions = dict(self.client.positions)
-        orders = await self.sync_open_orders()
-        books = await self.sync_order_books()
-        return positions, orders, books
+    async def sync_account(self) -> tuple[float, float, dict[str, int], float | None]:
+        try:
+            data = await self.client._get("account")
+        except Exception:
+            await self.client.update_positions()
+            return self.client.cash, self.client.margin, dict(self.client.positions), None
 
-    async def sync_positions(self) -> dict[str, int]:
-        await self.client.update_positions()
-        return dict(self.client.positions)
+        cash = float(data.get("cash", 0.0))
+        margin = float(data.get("margin", 0.0))
+        positions = {symbol: int(qty) for symbol, qty in data.get("positions", {}).items() if int(qty) != 0}
+        total_pnl = _extract_total_pnl(data)
+        self.client.cash = cash
+        self.client.margin = margin
+        self.client.positions = positions
+        return cash, margin, positions, total_pnl
 
     async def sync_open_orders(self) -> dict[int, OrderView]:
         raw = await self.client.get_open_orders()
@@ -87,3 +90,11 @@ class SimulatorAdapter:
             )
             for symbol in books
         }
+
+
+def _extract_total_pnl(account: dict[str, Any]) -> float | None:
+    for key in ("total_pnl", "pnl_total", "pnl", "mark_to_market_pnl", "mtm_pnl"):
+        value = account.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
