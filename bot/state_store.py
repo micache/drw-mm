@@ -42,8 +42,10 @@ class StateStore:
         self.state.fills.append(fill)
         self.state.mark_dirty("fills")
 
-    def apply_trade(self) -> None:
+    def apply_trade(self, display_symbol: str, price: float) -> None:
+        self.state.last_trade_by_symbol[display_symbol] = price
         self.state.mark_dirty("trades")
+        self.state.set_source_timestamp("trades", time.time())
 
     def apply_team_states(self, team_states: dict[str, TeamTournamentState]) -> None:
         self.state.team_states = team_states

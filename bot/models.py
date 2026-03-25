@@ -211,6 +211,7 @@ class BotState:
     avg_entry_by_symbol: dict[str, float] = field(default_factory=dict)
     dirty_flags: set[str] = field(default_factory=set)
     source_timestamps: dict[str, float] = field(default_factory=dict)
+    last_trade_by_symbol: dict[str, float] = field(default_factory=dict)
 
     def mark_dirty(self, key: str) -> None:
         self.dirty_flags.add(key)

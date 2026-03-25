@@ -29,13 +29,16 @@ class PnlEngine:
 
     @staticmethod
     def compute_mark_price(book, last_trade: float | None = None, avg_entry: float | None = None, fv: float | None = None) -> float | None:
+        # Competition marking rule: open positions are marked to the last traded price.
+        if last_trade is not None:
+            return last_trade
         if book and book.best_bid and book.best_ask:
             return (book.best_bid.price + book.best_ask.price) / 2.0
         if book and book.best_bid:
             return book.best_bid.price
         if book and book.best_ask:
             return book.best_ask.price
-        return last_trade if last_trade is not None else avg_entry if avg_entry is not None else fv
+        return avg_entry if avg_entry is not None else fv
 
     def build_position_views(self, state: BotState) -> list[PositionView]:
         now = time.time()
@@ -46,7 +49,7 @@ class PnlEngine:
             fv = state.fair_values.get(symbol)
             team_state = state.team_states.get(meta.normalized_team_name) if meta else None
             avg = state.avg_entry_by_symbol.get(symbol, 0.0)
-            mark = self.compute_mark_price(book, avg_entry=avg, fv=fv.active_fv if fv else None)
+            mark = self.compute_mark_price(book, last_trade=state.last_trade_by_symbol.get(symbol), avg_entry=avg, fv=fv.active_fv if fv else None)
             unrealized = ((mark or avg) - avg) * qty
             out.append(
                 PositionView(

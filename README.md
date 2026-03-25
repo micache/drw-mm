@@ -47,3 +47,7 @@ python -m bot.force_order_smoke
 ```
 
 This places one small BID (qty=1) on the first available symbol, then cancels it.
+
+
+## Strategy documentation
+See `STRATEGY.md` for a full module-by-module explanation of the current strategy pipeline.

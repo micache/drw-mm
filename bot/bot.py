@@ -93,6 +93,7 @@ class SimulatorBot(Client):
             asyncio.create_task(self._live_odds_refresh_loop()),
             asyncio.create_task(self._reporter_loop()),
             asyncio.create_task(self._strategy_loop()),
+            asyncio.create_task(self._account_log_loop()),
         ]
         try:
             await asyncio.gather(*tasks)
@@ -131,7 +132,7 @@ class SimulatorBot(Client):
         self._strategy_event.set()
 
     async def on_all_trade(self, trade) -> None:
-        self.state_store.apply_trade()
+        self.state_store.apply_trade(trade.display_symbol, trade.px)
 
     async def on_order_update(self, order) -> None:
         view = OrderView(
@@ -234,6 +235,18 @@ class SimulatorBot(Client):
                     logger.info("placed order side=%s symbol=%s px=%s qty=%s reason=%s", o.side, o.symbol, o.price, o.qty, o.reason)
                 except Exception as exc:
                     logger.warning("order placement failed for %s: %s", o, exc)
+
+    async def _account_log_loop(self) -> None:
+        while True:
+            try:
+                views = self.pnl_engine.build_position_views(self.state_store.state)
+                unrealized = sum(v.unrealized_pnl for v in views)
+                realized = sum(self.state_store.state.realized_pnl_by_symbol.values())
+                total_pnl = realized + unrealized
+                logger.info("account_summary cash=%.2f pnl_total=%.2f positions=%d", self.state_store.state.cash, total_pnl, len(self.state_store.state.positions_raw))
+            except Exception as exc:
+                logger.warning("account summary log failed: %s", exc)
+            await asyncio.sleep(10)
 
     async def _refresh_external_sources(self) -> None:
         scoreboard = await self.ncaa_source.fetch_scoreboard()
