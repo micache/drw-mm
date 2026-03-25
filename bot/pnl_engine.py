@@ -23,9 +23,13 @@ class PnlEngine:
         close_qty = min(abs(pos), abs(signed))
         realized = (fill.price - avg) * close_qty * (1 if pos > 0 else -1)
         state.realized_pnl_by_symbol[symbol] = state.realized_pnl_by_symbol.get(symbol, 0.0) + realized
-        state.positions_raw[symbol] = pos + signed
-        if state.positions_raw[symbol] == 0:
+        new_pos = pos + signed
+        state.positions_raw[symbol] = new_pos
+        if new_pos == 0:
             state.avg_entry_by_symbol[symbol] = 0.0
+        elif (pos > 0 > new_pos) or (pos < 0 < new_pos):
+            # Position flip: remaining size is a fresh entry at fill price.
+            state.avg_entry_by_symbol[symbol] = fill.price
 
     @staticmethod
     def compute_mark_price(book, last_trade: float | None = None, avg_entry: float | None = None, fv: float | None = None) -> float | None:
