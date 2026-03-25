@@ -4,7 +4,6 @@ import csv
 import os
 import tempfile
 from datetime import datetime, timezone
-import time
 from pathlib import Path
 
 from bot import config
@@ -62,7 +61,7 @@ class Reporter:
                 if key in self.last_fill_keys:
                     continue
                 self.last_fill_keys.add(key)
-                ts_iso = datetime.fromtimestamp(fill.timestamp, tz=timezone.utc).isoformat()
+                ts_iso = _format_timestamp(fill.timestamp)
                 writer.writerow([ts_iso, fill.order_id, fill.display_symbol, fill.team_name, fill.price, fill.traded_qty, fill.remaining_qty])
 
     def _write_fair_values(self, state: BotState) -> None:
@@ -78,3 +77,7 @@ class Reporter:
             writer.writerows(rows)
             tmp_path = tmp.name
         os.replace(tmp_path, path)
+
+
+def _format_timestamp(timestamp: float) -> str:
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
