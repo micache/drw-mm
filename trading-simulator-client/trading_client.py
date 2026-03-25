@@ -325,17 +325,52 @@ class Client(ABC):
         pass
 
     async def socket_reader(self) -> None:
-        """Receive websocket messages."""
-        async with self.session.ws_connect(self.ws_uri) as websocket:
-            async for message in websocket:
-                data = json.loads(message.data)
-                try:
-                    notification_type = NotificationType[data["notification_type"]]
-                    data = data["data"]
-                except Exception:
-                    logging.error("Unrecognized notification payload: %s", data)
-                else:
-                    self._message_queue.put_nowait((notification_type, data))
+        """Receive websocket messages.
+
+        The websocket may disconnect transiently (network reset, VPS sleep,
+        server restart, etc.). Keep reconnecting so one dropped socket does
+        not terminate the entire bot process.
+        """
+        reconnect_delay = 1.0
+        max_reconnect_delay = 30.0
+
+        while True:
+            try:
+                async with self.session.ws_connect(self.ws_uri) as websocket:
+                    reconnect_delay = 1.0
+                    async for message in websocket:
+                        if message.type != aiohttp.WSMsgType.TEXT:
+                            continue
+
+                        try:
+                            data = json.loads(message.data)
+                        except json.JSONDecodeError:
+                            logging.error("Non-JSON websocket payload: %s", message.data)
+                            continue
+
+                        try:
+                            notification_type = NotificationType[data["notification_type"]]
+                            data = data["data"]
+                        except Exception:
+                            logging.error("Unrecognized notification payload: %s", data)
+                        else:
+                            self._message_queue.put_nowait((notification_type, data))
+
+            except asyncio.CancelledError:
+                raise
+            except (
+                aiohttp.ClientError,
+                ConnectionResetError,
+                OSError,
+                asyncio.TimeoutError,
+            ) as exc:
+                logging.warning(
+                    "socket disconnected (%s); reconnecting in %.1fs",
+                    exc,
+                    reconnect_delay,
+                )
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(max_reconnect_delay, reconnect_delay * 2)
 
     async def _handle_messages(self) -> None:
         """Handle websocket messages."""
