@@ -84,16 +84,12 @@ def append_fills(state: BotState, path: Path, from_index: int) -> int:
     with path.open("a", newline="") as f:
         writer = csv.writer(f)
         if not exists:
-            writer.writerow(["timestamp", "order_id", "contract_id", "price", "qty"])
+            writer.writerow(["order_id", "contract_id", "price", "qty"])
         for fill in state.fills[from_index:]:
-            writer.writerow([_format_timestamp(fill.timestamp), fill.order_id, fill.contract_id, fill.price, fill.qty])
+            writer.writerow([fill.order_id, fill.contract_id, fill.price, fill.qty])
     return len(state.fills)
 
 
 def write_fair_values(state: BotState, path: Path) -> None:
     rows = [[cid, fv.value, fv.source] for cid, fv in state.fair_values.items()]
     _atomic_write_csv(path, ["contract_id", "fair_value", "source"], rows)
-
-
-def _format_timestamp(timestamp: float) -> str:
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()

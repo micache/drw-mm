@@ -47,6 +47,29 @@ class SimulatorAdapter:
             )
         return out
 
+    async def sync_fills(self) -> list[FillView]:
+        data = await self.client._get("fills")
+        if not isinstance(data, list):
+            return []
+        fills: list[FillView] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("display_symbol", ""))
+            fills.append(
+                FillView(
+                    timestamp=float(item.get("timestamp", 0.0)),
+                    order_id=int(item.get("order_id", 0)),
+                    display_symbol=symbol,
+                    team_name=symbol,
+                    price=float(item.get("price", 0.0)),
+                    traded_qty=int(item.get("traded_quantity", item.get("quantity", 0))),
+                    remaining_qty=int(item.get("remaining_quantity", 0)),
+                )
+            )
+        fills.sort(key=lambda x: (x.timestamp, x.order_id))
+        return fills
+
     async def sync_order_books(self) -> dict[str, OrderBook]:
         raw = await self.client.get_order_books()
         out: dict[str, OrderBook] = {}

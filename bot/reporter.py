@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 import os
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 from bot import config
@@ -55,14 +54,13 @@ class Reporter:
         with path.open("a", newline="") as f:
             writer = csv.writer(f)
             if not exists:
-                writer.writerow(["timestamp", "order_id", "display_symbol", "team_name", "price", "traded_qty", "remaining_qty"])
+                writer.writerow(["order_id", "display_symbol", "team_name", "price", "traded_qty", "remaining_qty"])
             for fill in fills:
                 key = (fill.timestamp, fill.order_id, fill.display_symbol, fill.price, fill.traded_qty)
                 if key in self.last_fill_keys:
                     continue
                 self.last_fill_keys.add(key)
-                ts_iso = _format_timestamp(fill.timestamp)
-                writer.writerow([ts_iso, fill.order_id, fill.display_symbol, fill.team_name, fill.price, fill.traded_qty, fill.remaining_qty])
+                writer.writerow([fill.order_id, fill.display_symbol, fill.team_name, fill.price, fill.traded_qty, fill.remaining_qty])
 
     def _write_fair_values(self, state: BotState) -> None:
         rows = [[x.display_symbol, x.team_name, x.baseline_fv, x.live_fv, x.active_fv, x.fixed_settlement, x.fv_mode] for x in state.fair_values.values()]

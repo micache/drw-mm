@@ -78,6 +78,7 @@ class SimulatorBot(Client):
                 region=meta.region,
             )
         self.state_store.state.contracts = contracts
+        await self._seed_pnl_from_fill_history()
 
         try:
             await asyncio.wait_for(self._refresh_external_sources(), timeout=12)
@@ -266,3 +267,36 @@ class SimulatorBot(Client):
 
     def _recompute_fair_values(self) -> None:
         self.state_store.apply_fair_values(self.fv_engine.recompute_all(self.state_store.state))
+
+    async def _seed_pnl_from_fill_history(self) -> None:
+        try:
+            fills = await self.adapter.sync_fills()
+        except Exception as exc:
+            logger.warning("historical fills sync failed: %s", exc)
+            return
+        if not fills:
+            return
+
+        # Rebuild avg-entry / realized pnl from historical fills so position views
+        # do not default to zero-cost for pre-existing inventory.
+        state = self.state_store.state
+        current_positions = dict(state.positions_raw)
+        state.fills = []
+        state.avg_entry_by_symbol.clear()
+        state.realized_pnl_by_symbol.clear()
+        state.positions_raw = {}
+        for fill in fills:
+            fill_with_team = FillView(
+                timestamp=fill.timestamp,
+                order_id=fill.order_id,
+                display_symbol=fill.display_symbol,
+                team_name=state.contracts.get(fill.display_symbol).team_name if fill.display_symbol in state.contracts else fill.display_symbol,
+                price=fill.price,
+                traded_qty=fill.traded_qty,
+                remaining_qty=fill.remaining_qty,
+            )
+            state.fills.append(fill_with_team)
+            self.pnl_engine.apply_fill(fill_with_team, state)
+
+        # Keep server account positions authoritative after replaying fills.
+        state.positions_raw = current_positions
