@@ -23,9 +23,13 @@ class PnlEngine:
         close_qty = min(abs(pos), abs(signed))
         realized = (fill.price - avg) * close_qty * (1 if pos > 0 else -1)
         state.realized_pnl_by_symbol[symbol] = state.realized_pnl_by_symbol.get(symbol, 0.0) + realized
-        state.positions_raw[symbol] = pos + signed
-        if state.positions_raw[symbol] == 0:
+        new_pos = pos + signed
+        state.positions_raw[symbol] = new_pos
+        if new_pos == 0:
             state.avg_entry_by_symbol[symbol] = 0.0
+        elif (pos > 0 > new_pos) or (pos < 0 < new_pos):
+            # Position flip: remaining size is a fresh entry at fill price.
+            state.avg_entry_by_symbol[symbol] = fill.price
 
     @staticmethod
     def compute_mark_price(book, last_trade: float | None = None, avg_entry: float | None = None, fv: float | None = None) -> float | None:
@@ -48,9 +52,10 @@ class PnlEngine:
             book = state.order_books.get(symbol)
             fv = state.fair_values.get(symbol)
             team_state = state.team_states.get(meta.normalized_team_name) if meta else None
+            has_avg = symbol in state.avg_entry_by_symbol
             avg = state.avg_entry_by_symbol.get(symbol, 0.0)
             mark = self.compute_mark_price(book, last_trade=state.last_trade_by_symbol.get(symbol), avg_entry=avg, fv=fv.active_fv if fv else None)
-            unrealized = ((mark or avg) - avg) * qty
+            unrealized = ((mark or avg) - avg) * qty if has_avg else 0.0
             out.append(
                 PositionView(
                     display_symbol=symbol,
