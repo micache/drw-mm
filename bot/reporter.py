@@ -75,3 +75,7 @@ class Reporter:
             writer.writerows(rows)
             tmp_path = tmp.name
         os.replace(tmp_path, path)
+
+
+def _format_timestamp(timestamp: float) -> str:
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
