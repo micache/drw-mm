@@ -15,6 +15,7 @@ class StateStore:
         margin: float,
         positions: dict[str, int],
         total_pnl: float | None = None,
+        avg_entries: dict[str, float] | None = None,
     ) -> None:
         self.state.cash = cash
         self.state.margin = margin
@@ -22,6 +23,10 @@ class StateStore:
             self.state.initial_cash = cash
         self.state.server_total_pnl = total_pnl
         self.state.positions_raw = {k: v for k, v in positions.items() if v != 0}
+        if avg_entries:
+            for symbol, avg in avg_entries.items():
+                if symbol in self.state.positions_raw:
+                    self.state.avg_entry_by_symbol[symbol] = avg
         self.state.mark_dirty("account")
         self.state.set_source_timestamp("account", time.time())
 

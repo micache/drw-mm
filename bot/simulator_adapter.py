@@ -12,21 +12,21 @@ from bot.models import BookLevel, ContractMeta, FillView, OrderBook, OrderView
 class SimulatorAdapter:
     client: Any
 
-    async def sync_account(self) -> tuple[float, float, dict[str, int], float | None]:
+    async def sync_account(self) -> tuple[float, float, dict[str, int], float | None, dict[str, float]]:
         try:
             data = await self.client._get("account")
         except Exception:
             await self.client.update_positions()
-            return self.client.cash, self.client.margin, dict(self.client.positions), None
+            return self.client.cash, self.client.margin, dict(self.client.positions), None, {}
 
         cash = float(data.get("cash", 0.0))
         margin = float(data.get("margin", 0.0))
-        positions = {symbol: int(qty) for symbol, qty in data.get("positions", {}).items() if int(qty) != 0}
+        positions, avg_entries = _parse_account_positions(data.get("positions", {}))
         total_pnl = _extract_total_pnl(data)
         self.client.cash = cash
         self.client.margin = margin
         self.client.positions = positions
-        return cash, margin, positions, total_pnl
+        return cash, margin, positions, total_pnl, avg_entries
 
     async def sync_open_orders(self) -> dict[int, OrderView]:
         raw = await self.client.get_open_orders()
@@ -121,3 +121,26 @@ def _extract_total_pnl(account: dict[str, Any]) -> float | None:
         if isinstance(value, (int, float)):
             return float(value)
     return None
+
+
+def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[str, float]]:
+    if not isinstance(raw_positions, dict):
+        return {}, {}
+    positions: dict[str, int] = {}
+    avg_entries: dict[str, float] = {}
+    for symbol, value in raw_positions.items():
+        qty = 0
+        avg: float | None = None
+        if isinstance(value, dict):
+            qty = int(value.get("qty", value.get("quantity", value.get("position", 0))))
+            avg_val = value.get("avg_entry_price", value.get("average_price", value.get("avg_price", value.get("cost_basis"))))
+            if isinstance(avg_val, (int, float)):
+                avg = float(avg_val)
+        elif isinstance(value, (int, float)):
+            qty = int(value)
+        if qty == 0:
+            continue
+        positions[str(symbol)] = qty
+        if avg is not None:
+            avg_entries[str(symbol)] = avg
+    return positions, avg_entries

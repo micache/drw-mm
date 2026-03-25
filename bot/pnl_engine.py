@@ -55,7 +55,9 @@ class PnlEngine:
             has_avg = symbol in state.avg_entry_by_symbol
             avg = state.avg_entry_by_symbol.get(symbol, 0.0)
             mark = self.compute_mark_price(book, last_trade=state.last_trade_by_symbol.get(symbol), avg_entry=avg, fv=fv.active_fv if fv else None)
-            unrealized = ((mark or avg) - avg) * qty if has_avg else 0.0
+            if not has_avg:
+                avg = fv.active_fv if fv and fv.active_fv is not None else (mark or 0.0)
+            unrealized = ((mark or avg) - avg) * qty
             out.append(
                 PositionView(
                     display_symbol=symbol,
