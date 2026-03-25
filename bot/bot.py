@@ -240,10 +240,10 @@ class SimulatorBot(Client):
         while True:
             try:
                 views = self.pnl_engine.build_position_views(self.state_store.state)
-                unrealized = sum(v.unrealized_pnl for v in views)
-                realized = sum(self.state_store.state.realized_pnl_by_symbol.values())
-                total_pnl = realized + unrealized
-                logger.info("account_summary cash=%.2f pnl_total=%.2f positions=%d", self.state_store.state.cash, total_pnl, len(self.state_store.state.positions_raw))
+                inventory_value = sum((v.mark_price or 0.0) * v.qty for v in views)
+                initial_cash = self.state_store.state.initial_cash or 0.0
+                total_pnl = (self.state_store.state.cash + inventory_value) - initial_cash
+                logger.info("account_summary cash=%.2f pnl_total=%.2f inventory_value=%.2f positions=%d", self.state_store.state.cash, total_pnl, inventory_value, len(self.state_store.state.positions_raw))
             except Exception as exc:
                 logger.warning("account summary log failed: %s", exc)
             await asyncio.sleep(10)

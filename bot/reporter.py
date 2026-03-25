@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import os
 import tempfile
+from datetime import datetime, timezone
 import time
 from pathlib import Path
 
@@ -45,8 +46,8 @@ class Reporter:
         )
 
     def _write_orders(self, orders: dict[int, OrderView]) -> None:
-        rows = [[o.order_id, o.display_symbol, o.team_name, o.side, o.price, o.qty_signed, o.qty_abs, o.canceled, o.last_updated_ts] for o in orders.values()]
-        self._atomic_csv(config.ORDERS_CSV, ["order_id", "display_symbol", "team_name", "side", "price", "qty_signed", "qty_abs", "canceled", "last_updated_ts"], rows)
+        rows = [[o.order_id, o.display_symbol, o.team_name, o.side, o.price, o.qty_signed, o.qty_abs, o.canceled] for o in orders.values()]
+        self._atomic_csv(config.ORDERS_CSV, ["order_id", "display_symbol", "team_name", "side", "price", "qty_signed", "qty_abs", "canceled"], rows)
 
     def _append_fills(self, fills: list[FillView]) -> None:
         path = config.FILLS_CSV
@@ -61,11 +62,12 @@ class Reporter:
                 if key in self.last_fill_keys:
                     continue
                 self.last_fill_keys.add(key)
-                writer.writerow([fill.timestamp, fill.order_id, fill.display_symbol, fill.team_name, fill.price, fill.traded_qty, fill.remaining_qty])
+                ts_iso = datetime.fromtimestamp(fill.timestamp, tz=timezone.utc).isoformat()
+                writer.writerow([ts_iso, fill.order_id, fill.display_symbol, fill.team_name, fill.price, fill.traded_qty, fill.remaining_qty])
 
     def _write_fair_values(self, state: BotState) -> None:
-        rows = [[x.display_symbol, x.team_name, x.baseline_fv, x.live_fv, x.active_fv, x.fixed_settlement, x.fv_mode, x.source_timestamp] for x in state.fair_values.values()]
-        self._atomic_csv(config.FAIR_VALUES_CSV, ["display_symbol", "team_name", "baseline_fv", "live_fv", "active_fv", "fixed_settlement", "fv_mode", "source_timestamp"], rows)
+        rows = [[x.display_symbol, x.team_name, x.baseline_fv, x.live_fv, x.active_fv, x.fixed_settlement, x.fv_mode] for x in state.fair_values.values()]
+        self._atomic_csv(config.FAIR_VALUES_CSV, ["display_symbol", "team_name", "baseline_fv", "live_fv", "active_fv", "fixed_settlement", "fv_mode"], rows)
 
     @staticmethod
     def _atomic_csv(path: Path, headers: list[str], rows: list[list[object]]) -> None:
