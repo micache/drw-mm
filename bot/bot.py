@@ -20,8 +20,10 @@ from bot.simulator_adapter import SimulatorAdapter
 from bot.state_store import StateStore
 from bot.strategy_arbitrage import ArbitrageStrategy
 from bot.strategy_live import LiveStrategy
+from bot.strategy_pregame import PregameStrategy
+from bot.inventory_reduction import InventoryReductionStrategy
 from bot.strategy_router import StrategyRouter
-from bot.team_mapping import TeamMapper
+from bot.team_mapping import TeamMapper, validate_symbol_mapping
 from bot.models import ContractMeta, FillView, LiveGameProb, OrderBook, OrderView
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +49,7 @@ class SimulatorBot(Client):
         self.reporter = Reporter()
         self.pnl_engine = PnlEngine()
         risk = RiskEngine()
-        self.router = StrategyRouter(ArbitrageStrategy(risk), LiveStrategy(risk))
+        self.router = StrategyRouter(ArbitrageStrategy(risk), PregameStrategy(risk), LiveStrategy(risk), InventoryReductionStrategy(risk))
         self._strategy_event = asyncio.Event()
 
     async def on_start(self) -> None:
@@ -84,6 +86,7 @@ class SimulatorBot(Client):
             await asyncio.wait_for(self._refresh_external_sources(), timeout=12)
         except asyncio.TimeoutError:
             logger.warning("external source refresh timed out during startup; continuing")
+        self._validate_mappings()
         self._recompute_fair_values()
         logger.info("startup fair values count=%d dry_run=%s", len(self.state_store.state.fair_values), config.DRY_RUN)
         self.reporter.write_all(self.state_store.state)
@@ -167,14 +170,16 @@ class SimulatorBot(Client):
 
     async def _ncaa_refresh_loop(self) -> None:
         while True:
-            delay = config.NCAA_REFRESH_IDLE_SECONDS
+            delay = config.NCAA_SCOREBOARD_REFRESH_SECONDS
             try:
                 scoreboard = await self.ncaa_source.fetch_scoreboard()
-                team_states = self.ncaa_source.refresh_team_live_status(scoreboard)
+                live_states = self.ncaa_source.refresh_live_games(scoreboard)
+                bracket = await self.ncaa_source.fetch_bracket()
+                team_states = self.ncaa_source.refresh_bracket_truth(bracket, live_states)
                 self.state_store.apply_team_states(team_states)
                 self._recompute_fair_values()
                 self._strategy_event.set()
-                delay = config.NCAA_REFRESH_LIVE_SECONDS if any(x.in_live_game for x in team_states.values()) else config.NCAA_REFRESH_IDLE_SECONDS
+                delay = config.NCAA_SCOREBOARD_REFRESH_SECONDS
             except Exception as exc:
                 logger.warning("ncaa refresh failed: %s", exc)
             await asyncio.sleep(delay)
@@ -193,7 +198,7 @@ class SimulatorBot(Client):
     async def _live_odds_refresh_loop(self) -> None:
         while True:
             try:
-                raws = await self.live_odds_source.fetch_live_games_odds()
+                raws = await self.live_odds_source.fetch_games_odds()
                 live: dict[str, LiveGameProb] = {}
                 for raw in raws:
                     parsed = self.live_odds_source.extract_moneyline_probs(raw)
@@ -259,11 +264,30 @@ class SimulatorBot(Client):
 
     async def _refresh_external_sources(self) -> None:
         scoreboard = await self.ncaa_source.fetch_scoreboard()
-        team_states = self.ncaa_source.refresh_team_live_status(scoreboard)
+        live_states = self.ncaa_source.refresh_live_games(scoreboard)
+        bracket = await self.ncaa_source.fetch_bracket()
+        team_states = self.ncaa_source.refresh_bracket_truth(bracket, live_states)
         self.state_store.apply_team_states(team_states)
         probs = await self.playoff_source.refresh()
         self.state_store.apply_probabilities(probs)
+        self._validate_mappings()
         logger.info("external refresh: team_states=%d playoff_probs=%d", len(team_states), len(probs))
+
+
+    def _validate_mappings(self) -> None:
+        state = self.state_store.state
+        ncaa_teams = set(state.team_states.keys())
+        odds_teams: set[str] = set()
+        for game in state.live_game_probs.values():
+            odds_teams.add(game.home_team_normalized)
+            odds_teams.add(game.away_team_normalized)
+        errs = validate_symbol_mapping(state.contracts, state.team_probs, ncaa_teams, odds_teams)
+        unresolved = {e.symbol for e in errs if e.reason == "missing_playoffstatus_row"}
+        state.unresolved_symbols = unresolved
+        for symbol, meta in list(state.contracts.items()):
+            blocked = symbol in unresolved
+            status = "unresolved" if blocked else "resolved"
+            state.contracts[symbol] = ContractMeta(display_symbol=meta.display_symbol, team_name=meta.team_name, normalized_team_name=meta.normalized_team_name, seed=meta.seed, region=meta.region, mapping_status=status, trading_blocked=blocked)
 
     def _recompute_fair_values(self) -> None:
         self.state_store.apply_fair_values(self.fv_engine.recompute_all(self.state_store.state))
@@ -281,6 +305,8 @@ class SimulatorBot(Client):
         # do not default to zero-cost for pre-existing inventory.
         state = self.state_store.state
         current_positions = dict(state.positions_raw)
+        snapshot_avg = dict(state.avg_entry_by_symbol)
+        snapshot_entry_source = dict(state.entry_source_by_symbol)
         state.fills = []
         state.avg_entry_by_symbol.clear()
         state.realized_pnl_by_symbol.clear()
@@ -300,3 +326,11 @@ class SimulatorBot(Client):
 
         # Keep server account positions authoritative after replaying fills.
         state.positions_raw = current_positions
+        # If fill history is partial, preserve snapshot averages for symbols that
+        # were not reconstructable from fills.
+        for symbol, qty in current_positions.items():
+            if qty == 0:
+                continue
+            if symbol not in state.avg_entry_by_symbol and symbol in snapshot_avg:
+                state.avg_entry_by_symbol[symbol] = snapshot_avg[symbol]
+                state.entry_source_by_symbol[symbol] = snapshot_entry_source.get(symbol, "server_snapshot")

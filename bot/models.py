@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 
-# ---------- Existing lightweight primitives ----------
 TeamStatus = Literal["alive", "eliminated"]
 
 
@@ -91,7 +90,6 @@ class GameState:
     confidence: str
 
 
-# ---------- Spec-aligned v2 dataclasses ----------
 @dataclass(frozen=True)
 class ContractMeta:
     display_symbol: str
@@ -99,6 +97,8 @@ class ContractMeta:
     normalized_team_name: str
     seed: str | None = None
     region: str | None = None
+    mapping_status: str = "resolved"
+    trading_blocked: bool = False
 
 
 @dataclass(frozen=True)
@@ -106,16 +106,26 @@ class PositionView:
     display_symbol: str
     team_name: str
     qty: int
-    avg_entry_price: float
+    avg_entry_price: float | None
+    entry_source: str
     best_bid: float | None
     best_ask: float | None
     mark_price: float | None
+    mark_price_source: str
     fair_value: float | None
+    fair_value_source_timestamp: float | None
     settlement_if_known: float | None
-    unrealized_pnl: float
+    unrealized_pnl: float | None
     realized_pnl: float
     status: str
     current_round: str | None
+    fv_mode: str | None
+    mapping_status: str
+    ncaa_status_mode: str
+    odds_quality_score: float | None
+    signal_buy_edge: float | None
+    signal_sell_edge: float | None
+    last_strategy_reason: str | None
     last_updated_ts: float
 
 
@@ -149,11 +159,13 @@ class TeamTournamentState:
     normalized_team_name: str
     alive: bool
     in_live_game: bool
-    current_round: str | None
-    game_id: str | None
-    eliminated_round: str | None
-    fixed_settlement: float | None
-    last_status_ts: float
+    has_upcoming_game: bool = False
+    current_round: str | None = None
+    game_id: str | None = None
+    eliminated_round: str | None = None
+    fixed_settlement: float | None = None
+    ncaa_status_mode: str = "unresolved"
+    last_status_ts: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -168,6 +180,9 @@ class TeamProbabilities:
     p_champion: float
     baseline_fv: float
     source_timestamp: float
+    parsed_ok: bool = True
+    raw_team_name: str | None = None
+    canonical_team_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,6 +195,10 @@ class LiveGameProb:
     bookmakers_used: int
     source_timestamp: float
     is_fresh: bool
+    is_live: bool = False
+    odds_quality_score: float = 0.0
+    median_staleness_seconds: float | None = None
+    delta_home_win_prob: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -188,6 +207,7 @@ class TeamFairValue:
     team_name: str
     baseline_fv: float
     live_fv: float | None
+    pregame_fv: float | None
     active_fv: float
     fixed_settlement: float | None
     fv_mode: str
@@ -209,11 +229,15 @@ class BotState:
     team_probs: dict[str, TeamProbabilities] = field(default_factory=dict)
     live_game_probs: dict[str, LiveGameProb] = field(default_factory=dict)
     fair_values: dict[str, TeamFairValue] = field(default_factory=dict)
+    unresolved_symbols: set[str] = field(default_factory=set)
     realized_pnl_by_symbol: dict[str, float] = field(default_factory=dict)
     avg_entry_by_symbol: dict[str, float] = field(default_factory=dict)
+    entry_source_by_symbol: dict[str, str] = field(default_factory=dict)
     dirty_flags: set[str] = field(default_factory=set)
     source_timestamps: dict[str, float] = field(default_factory=dict)
     last_trade_by_symbol: dict[str, float] = field(default_factory=dict)
+    signal_edges_by_symbol: dict[str, tuple[float | None, float | None]] = field(default_factory=dict)
+    last_strategy_reason_by_symbol: dict[str, str] = field(default_factory=dict)
 
     def mark_dirty(self, key: str) -> None:
         self.dirty_flags.add(key)
