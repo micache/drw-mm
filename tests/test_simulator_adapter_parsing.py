@@ -47,3 +47,12 @@ def test_sync_account_reads_top_level_avg_entries():
     _, _, positions, _, avgs = asyncio.run(adapter.sync_account())
     assert positions["A"] == 3
     assert avgs["A"] == 6.25
+
+
+def test_sync_fills_accepts_tuple_rows_payload():
+    payload = [[1, 10, "A", 7.5, -2, 0]]
+    adapter = SimulatorAdapter(DummyClient(payload, {}))
+    fills = asyncio.run(adapter.sync_fills())
+    assert len(fills) == 1
+    assert fills[0].display_symbol == "A"
+    assert fills[0].traded_qty == -2

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from bot import config
 from bot.models import BookLevel, ContractMeta, FillView, OrderBook, OrderView
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -91,6 +94,7 @@ class SimulatorAdapter:
             )
 
         fills.sort(key=lambda x: (x.timestamp, x.order_id))
+        logger.info("sync_fills parsed=%d", len(fills))
         return fills
 
     async def sync_order_books(self) -> dict[str, OrderBook]:
@@ -201,15 +205,32 @@ def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[s
 
 
 def _iter_fill_items(data: Any) -> list[dict[str, Any]]:
-    if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
+    out: list[dict[str, Any]] = []
     if isinstance(data, dict):
         if isinstance(data.get("fills"), list):
-            return [x for x in data["fills"] if isinstance(x, dict)]
-        # handle id -> fill mapping
-        if all(isinstance(v, dict) for v in data.values()):
-            return [v for v in data.values() if isinstance(v, dict)]
-    return []
+            data = data["fills"]
+        elif all(isinstance(v, dict) for v in data.values()):
+            data = list(data.values())
+
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                out.append(item)
+                continue
+            # tolerate tuple/list payloads:
+            # [timestamp, order_id, display_symbol, price, traded_qty, remaining_qty]
+            if isinstance(item, (list, tuple)) and len(item) >= 5:
+                out.append(
+                    {
+                        "timestamp": item[0],
+                        "order_id": item[1],
+                        "display_symbol": item[2],
+                        "price": item[3],
+                        "traded_qty": item[4],
+                        "remaining_qty": item[5] if len(item) > 5 else 0,
+                    }
+                )
+    return out
 
 
 def _to_int(value: Any) -> int | None:

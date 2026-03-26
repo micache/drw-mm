@@ -50,7 +50,6 @@ class Reporter:
                 "best_bid",
                 "best_ask",
                 "mark_price",
-                "mark_price_source",
                 "fair_value",
                 "last_strategy_reason",
                 "unrealized_pnl",
