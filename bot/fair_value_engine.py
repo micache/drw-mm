@@ -14,6 +14,14 @@ SETTLEMENT_BY_ROUND = {
     "FINAL": 32.0,
     "CHAMPION": 64.0,
 }
+NEXT_SURVIVAL_ATTR = {
+    "ROUND_64": "p_r32",
+    "ROUND_32": "p_s16",
+    "SWEET_16": "p_e8",
+    "ELITE_8": "p_f4",
+    "FINAL_FOUR": "p_final",
+    "FINAL": "p_champion",
+}
 
 
 class FairValueEngine:
@@ -21,29 +29,40 @@ class FairValueEngine:
         now = time.time()
         out: dict[str, TeamFairValue] = {}
         for symbol, contract in state.contracts.items():
+            if contract.trading_blocked:
+                state.unresolved_symbols.add(symbol)
             norm = contract.normalized_team_name
             team_state = state.team_states.get(norm)
             team_prob = state.team_probs.get(norm)
 
             fixed = self.compute_fixed_fv(team_state)
             baseline = self.compute_baseline_fv(team_prob)
-            live_fv = self.compute_live_fv(team_state, team_prob, state.live_game_probs)
+            live_prob, pregame_prob = self._extract_probabilities(team_state, state.live_game_probs)
+            live_fv = self.compute_active_fv(team_state, team_prob, live_prob)
+            pregame_fv = self.compute_active_fv(team_state, team_prob, pregame_prob)
 
+            mode = "baseline"
+            active = baseline
             if fixed is not None:
-                active = fixed
                 mode = "fixed"
+                active = fixed
             elif live_fv is not None:
-                active = live_fv
                 mode = "live"
-            else:
-                active = baseline
-                mode = "baseline"
+                active = live_fv
+            elif pregame_fv is not None:
+                mode = "pregame"
+                active = pregame_fv
+
+            if team_state and team_state.alive and team_prob and active == 0.0 and fixed is None:
+                state.unresolved_symbols.add(symbol)
+                mode = "blocked_zero_fv"
 
             out[symbol] = TeamFairValue(
                 display_symbol=symbol,
                 team_name=contract.team_name,
                 baseline_fv=baseline,
                 live_fv=live_fv,
+                pregame_fv=pregame_fv,
                 active_fv=active,
                 fixed_settlement=fixed,
                 fv_mode=mode,
@@ -52,53 +71,58 @@ class FairValueEngine:
         return out
 
     @staticmethod
-    def compute_fixed_fv(team_state) -> float | None:
-        if not team_state:
-            return None
-        return team_state.fixed_settlement
-
-    @staticmethod
     def compute_baseline_fv(team_prob) -> float:
         return team_prob.baseline_fv if team_prob else 0.0
 
-    def compute_live_fv(self, team_state, team_prob, live_probs) -> float | None:
-        if not team_state or not team_prob or not team_state.in_live_game or not team_state.game_id:
-            return None
-        game = live_probs.get(team_state.game_id)
-        if not game:
-            return None
-
-        if team_state.normalized_team_name == game.home_team_normalized:
-            p_live = game.home_win_prob
-        elif team_state.normalized_team_name == game.away_team_normalized:
-            p_live = game.away_win_prob
-        else:
-            return None
-
-        lose_settlement = SETTLEMENT_BY_ROUND.get(team_state.current_round or "ROUND_64", 0.0)
-        ev_if_win_now = self._ev_if_win_current_game(team_state, team_prob)
-        return (p_live * ev_if_win_now) + ((1 - p_live) * lose_settlement)
-
     @staticmethod
-    def _ev_if_win_current_game(team_state, team_prob) -> float:
-        if not team_state or not team_prob:
-            return 0.0
-        survive = max(1e-6, {
-            "ROUND_32": team_prob.p_s16,
-            "SWEET_16": team_prob.p_e8,
-            "ELITE_8": team_prob.p_f4,
-            "FINAL_FOUR": team_prob.p_final,
-            "FINAL": team_prob.p_champion,
-        }.get(team_state.current_round or "ROUND_32", team_prob.p_s16))
+    def compute_fixed_fv(team_state) -> float | None:
+        return team_state.fixed_settlement if team_state and team_state.fixed_settlement is not None else None
 
-        cond_p_e8 = min(1.0, team_prob.p_e8 / survive)
-        cond_p_f4 = min(1.0, team_prob.p_f4 / survive)
-        cond_p_final = min(1.0, team_prob.p_final / survive)
-        cond_p_champ = min(1.0, team_prob.p_champion / survive)
+    def compute_conditioned_fv(self, team_prob, current_round: str | None, p_win_next: float) -> float | None:
+        if not team_prob or not current_round:
+            return None
+        survive_attr = NEXT_SURVIVAL_ATTR.get(current_round)
+        if not survive_attr:
+            return None
+        survive_prob = max(1e-6, float(getattr(team_prob, survive_attr, 0.0)))
+        settle_lose = SETTLEMENT_BY_ROUND.get(current_round, 0.0)
 
-        return (
+        cond_p_s16 = min(1.0, team_prob.p_s16 / survive_prob)
+        cond_p_e8 = min(1.0, team_prob.p_e8 / survive_prob)
+        cond_p_f4 = min(1.0, team_prob.p_f4 / survive_prob)
+        cond_p_final = min(1.0, team_prob.p_final / survive_prob)
+        cond_p_champ = min(1.0, team_prob.p_champion / survive_prob)
+        ev_if_win = (
             64 * cond_p_champ
             + 32 * (cond_p_final - cond_p_champ)
             + 16 * (cond_p_f4 - cond_p_final)
             + 8 * (cond_p_e8 - cond_p_f4)
+            + 4 * max(0.0, cond_p_s16 - cond_p_e8)
+            + 2 * max(0.0, 1.0 - cond_p_s16)
         )
+        p = max(0.0, min(1.0, p_win_next))
+        return (p * ev_if_win) + ((1.0 - p) * settle_lose)
+
+    def compute_active_fv(self, team_state, team_prob, live_or_pregame_prob: float | None) -> float | None:
+        if not team_state or not team_prob or live_or_pregame_prob is None:
+            return None
+        return self.compute_conditioned_fv(team_prob, team_state.current_round, live_or_pregame_prob)
+
+    @staticmethod
+    def _extract_probabilities(team_state, live_probs) -> tuple[float | None, float | None]:
+        if not team_state or not team_state.game_id:
+            return None, None
+        game = live_probs.get(team_state.game_id)
+        if not game:
+            return None, None
+        if team_state.normalized_team_name == game.home_team_normalized:
+            p = game.home_win_prob
+        elif team_state.normalized_team_name == game.away_team_normalized:
+            p = game.away_win_prob
+        else:
+            return None, None
+        if team_state.in_live_game:
+            return p, None
+        if team_state.has_upcoming_game:
+            return None, p
+        return None, None

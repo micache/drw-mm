@@ -27,6 +27,9 @@ class StateStore:
             for symbol, avg in avg_entries.items():
                 if symbol in self.state.positions_raw:
                     self.state.avg_entry_by_symbol[symbol] = avg
+                    self.state.entry_source_by_symbol[symbol] = "server_snapshot"
+        for symbol in self.state.positions_raw:
+            self.state.entry_source_by_symbol.setdefault(symbol, "unknown_after_restart")
         self.state.mark_dirty("account")
         self.state.set_source_timestamp("account", time.time())
 
