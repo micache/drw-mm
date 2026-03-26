@@ -27,18 +27,32 @@ class Reporter:
         for p in positions:
             rows.append([
                 p.display_symbol,
+                p.team_name,
                 p.qty,
                 p.avg_entry_price,
+                p.entry_source,
                 p.best_bid,
                 p.best_ask,
                 p.mark_price,
+                p.mark_price_source,
                 p.fair_value,
+                p.fair_value_source_timestamp,
+                p.fv_mode,
+                p.mapping_status,
+                p.ncaa_status_mode,
+                p.odds_quality_score,
+                p.signal_buy_edge,
+                p.signal_sell_edge,
+                p.last_strategy_reason,
                 p.unrealized_pnl,
             ])
         self._atomic_csv(
             config.POSITIONS_CSV,
             [
-                "display_symbol", "qty", "avg_entry_price", "best_bid", "best_ask", "mark_price", "fair_value", "unrealized_pnl",
+                "display_symbol", "team_name", "qty", "avg_entry_price_est", "entry_source", "best_bid", "best_ask",
+                "mark_price", "mark_price_source", "fair_value", "fair_value_source_timestamp", "fv_mode",
+                "mapping_status", "ncaa_status_mode", "odds_quality_score", "signal_buy_edge", "signal_sell_edge",
+                "last_strategy_reason", "unrealized_pnl",
             ],
             rows,
         )
@@ -63,8 +77,8 @@ class Reporter:
                 writer.writerow([fill.order_id, fill.display_symbol, fill.team_name, fill.price, fill.traded_qty, fill.remaining_qty])
 
     def _write_fair_values(self, state: BotState) -> None:
-        rows = [[x.display_symbol, x.team_name, x.baseline_fv, x.live_fv, x.active_fv, x.fixed_settlement, x.fv_mode] for x in state.fair_values.values()]
-        self._atomic_csv(config.FAIR_VALUES_CSV, ["display_symbol", "team_name", "baseline_fv", "live_fv", "active_fv", "fixed_settlement", "fv_mode"], rows)
+        rows = [[x.display_symbol, x.team_name, x.baseline_fv, x.pregame_fv, x.live_fv, x.active_fv, x.fixed_settlement, x.fv_mode] for x in state.fair_values.values()]
+        self._atomic_csv(config.FAIR_VALUES_CSV, ["display_symbol", "team_name", "baseline_fv", "pregame_fv", "live_fv", "active_fv", "fixed_settlement", "fv_mode"], rows)
 
     @staticmethod
     def _atomic_csv(path: Path, headers: list[str], rows: list[list[object]]) -> None:
@@ -75,7 +89,3 @@ class Reporter:
             writer.writerows(rows)
             tmp_path = tmp.name
         os.replace(tmp_path, path)
-
-
-def _format_timestamp(timestamp: float) -> str:
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()

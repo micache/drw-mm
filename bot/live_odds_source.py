@@ -17,8 +17,9 @@ class LiveOddsSource:
         self.api_key = api_key
         self.sport_key = sport_key
         self.mapper = mapper
+        self._last_home_prob: dict[str, float] = {}
 
-    async def fetch_live_games_odds(self) -> list[dict[str, Any]]:
+    async def fetch_games_odds(self) -> list[dict[str, Any]]:
         if not self.api_key:
             return []
         url = f"{self.base_url}/sports/{self.sport_key}/odds"
@@ -43,7 +44,15 @@ class LiveOddsSource:
 
         home_probs: list[float] = []
         away_probs: list[float] = []
+        staleness: list[float] = []
+        now = time.time()
         for bookmaker in raw_game.get("bookmakers", []):
+            updated = bookmaker.get("last_update")
+            if updated:
+                try:
+                    staleness.append(max(0.0, now - _to_ts(updated)))
+                except Exception:
+                    pass
             for market in bookmaker.get("markets", []):
                 if market.get("key") != "h2h":
                     continue
@@ -60,16 +69,37 @@ class LiveOddsSource:
 
         if not home_probs:
             return None
-        now = time.time()
+
+        home_med = statistics.median(home_probs)
+        away_med = statistics.median(away_probs)
+        total = home_med + away_med
+        if total <= 0:
+            return None
+        home_win = home_med / total
+        away_win = away_med / total
+        prev = self._last_home_prob.get(game_id, home_win)
+        delta = home_win - prev
+        self._last_home_prob[game_id] = home_win
+
+        bookmakers = len(home_probs)
+        median_staleness = statistics.median(staleness) if staleness else None
+        score = min(1.0, bookmakers / 8.0)
+        if median_staleness is not None:
+            score *= 1.0 if median_staleness <= 30 else 0.6
+
         return LiveGameProb(
             game_id=game_id,
             home_team_normalized=home_norm,
             away_team_normalized=away_norm,
-            home_win_prob=statistics.median(home_probs),
-            away_win_prob=statistics.median(away_probs),
-            bookmakers_used=len(home_probs),
+            home_win_prob=home_win,
+            away_win_prob=away_win,
+            bookmakers_used=bookmakers,
             source_timestamp=now,
-            is_fresh=True,
+            is_fresh=(median_staleness is None or median_staleness <= 120),
+            is_live=bool(raw_game.get("commence_time") is None),
+            odds_quality_score=score,
+            median_staleness_seconds=median_staleness,
+            delta_home_win_prob=delta,
         )
 
     @staticmethod
@@ -82,3 +112,11 @@ class LiveOddsSource:
                 return 100.0 / (odds + 100.0)
             return (-odds) / ((-odds) + 100.0)
         return 0.0
+
+
+def _to_ts(value: str) -> float:
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    from datetime import datetime
+
+    return datetime.fromisoformat(value).timestamp()
