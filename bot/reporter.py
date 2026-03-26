@@ -34,6 +34,7 @@ class Reporter:
                 p.best_bid,
                 p.best_ask,
                 p.mark_price,
+                p.mark_price_source,
                 p.fair_value,
                 p.last_strategy_reason,
                 p.unrealized_pnl,

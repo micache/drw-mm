@@ -1,2 +1,6 @@
-order_id,display_symbol,team_name,side,price,qty_signed,qty_abs,canceled,last_updated_ts
-5009271,Alabama,Alabama,sell,5.85,-60,60,False,1774349069.5914612
+order_id,display_symbol,team_name,side,price,qty_signed,qty_abs
+5555325,Saint Louis,Saint Louis,sell,12.57,-1,1
+5558953,Saint Louis,Saint Louis,sell,7.02,-1,1
+5569471,Saint Marys,Saint Marys,sell,0.47,-1,1
+6322987,Texas,Texas,sell,5.75,-20,20
+6324002,Illinois,Illinois,buy,11.5,20,20
