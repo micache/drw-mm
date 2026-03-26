@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime as dt
 import time
-from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
@@ -10,15 +9,6 @@ import aiohttp
 from bot.models import TeamTournamentState
 from bot.team_mapping import TeamMapper
 
-
-ROUND_BY_DATE_2026 = [
-    (dt.date(2026, 3, 17), dt.date(2026, 3, 18), "FIRST_FOUR"),
-    (dt.date(2026, 3, 19), dt.date(2026, 3, 22), "ROUND_64"),
-    (dt.date(2026, 3, 26), dt.date(2026, 3, 27), "SWEET_16"),
-    (dt.date(2026, 3, 28), dt.date(2026, 3, 29), "ELITE_8"),
-    (dt.date(2026, 4, 4), dt.date(2026, 4, 4), "FINAL_FOUR"),
-    (dt.date(2026, 4, 6), dt.date(2026, 4, 6), "FINAL"),
-]
 SETTLEMENT_BY_LOSS_ROUND = {
     "FIRST_FOUR": 0.0,
     "ROUND_64": 0.0,
@@ -28,15 +18,6 @@ SETTLEMENT_BY_LOSS_ROUND = {
     "FINAL_FOUR": 16.0,
     "FINAL": 32.0,
 }
-
-
-@dataclass(frozen=True)
-class NcaaGame:
-    game_id: str
-    home_team: str
-    away_team: str
-    game_state: str
-    bracket_round: str | None
 
 
 class NcaaSource:
@@ -57,11 +38,16 @@ class NcaaSource:
         except Exception:
             return []
 
-    def extract_live_games(self, scoreboard_json: list[dict[str, Any]]) -> list[NcaaGame]:
-        return [g for g in self._extract_games(scoreboard_json) if g.game_state.lower() in {"live", "in_progress"}]
-
-    def extract_finished_games(self, scoreboard_json: list[dict[str, Any]]) -> list[NcaaGame]:
-        return [g for g in self._extract_games(scoreboard_json) if g.game_state.lower() in {"final", "complete"}]
+    async def fetch_bracket(self) -> dict[str, Any]:
+        url = f"{self.base_url}/bracket/basketball-men/d1/2026"
+        try:
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status >= 400:
+                    return {}
+                data = await resp.json()
+                return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
 
     async def fetch_game(self, game_id: str) -> dict[str, Any]:
         url = f"{self.base_url}/game/{game_id}"
@@ -73,32 +59,79 @@ class NcaaSource:
         except Exception:
             return {}
 
-    def refresh_team_live_status(self, scoreboard: list[dict[str, Any]]) -> dict[str, TeamTournamentState]:
+    def refresh_live_games(self, scoreboard: list[dict[str, Any]]) -> dict[str, TeamTournamentState]:
         now = time.time()
-        games = self._extract_games(scoreboard)
-        live_ids = {g.game_id for g in self.extract_live_games(scoreboard)}
-        team_states: dict[str, TeamTournamentState] = {}
-        for game in games:
-            game_round = game.bracket_round or self._round_from_date(dt.date.today())
-            for name in (game.home_team, game.away_team):
+        out: dict[str, TeamTournamentState] = {}
+        for game in self._extract_games(scoreboard):
+            state = str(game.get("state", "")).lower()
+            round_name = game.get("round")
+            for side in ("home_name", "away_name"):
+                name = game.get(side)
+                if not name:
+                    continue
                 norm = self.mapper.resolve_external_name(name) or self.mapper.normalize(name)
-                is_live = game.game_id in live_ids
-                game_done = game.game_state.lower() in {"final", "complete"}
-                team_states[norm] = TeamTournamentState(
+                in_live = state in {"live", "in_progress"}
+                upcoming = state in {"pre", "scheduled", "preview"}
+                finalish = state in {"final", "complete"}
+                out[norm] = TeamTournamentState(
                     team_name=name,
                     normalized_team_name=norm,
-                    alive=not game_done,
-                    in_live_game=is_live,
-                    current_round=game_round,
-                    game_id=game.game_id,
-                    eliminated_round=game_round if game_done else None,
-                    fixed_settlement=SETTLEMENT_BY_LOSS_ROUND.get(game_round) if game_done else None,
+                    alive=not finalish,
+                    in_live_game=in_live,
+                    has_upcoming_game=upcoming,
+                    current_round=round_name,
+                    game_id=game.get("game_id"),
+                    eliminated_round=round_name if finalish else None,
+                    fixed_settlement=None,
+                    ncaa_status_mode=("live" if in_live else "upcoming" if upcoming else "final_pending_bracket" if finalish else "alive_idle"),
                     last_status_ts=now,
                 )
-        return team_states
+        return out
 
-    def _extract_games(self, scoreboard_json: list[dict[str, Any]]) -> list[NcaaGame]:
-        out: list[NcaaGame] = []
+    def refresh_bracket_truth(self, bracket_payload: dict[str, Any], team_states: dict[str, TeamTournamentState]) -> dict[str, TeamTournamentState]:
+        resolved = {k: v for k, v in team_states.items()}
+        for team_name, info in self.infer_team_round_status(bracket_payload).items():
+            norm = self.mapper.resolve_external_name(team_name) or self.mapper.normalize(team_name)
+            current = resolved.get(norm)
+            eliminated_round = info.get("eliminated_round")
+            is_alive = not bool(eliminated_round)
+            fixed = SETTLEMENT_BY_LOSS_ROUND.get(eliminated_round) if eliminated_round else None
+            mode = "alive_idle" if is_alive else "eliminated_fixed"
+            resolved[norm] = TeamTournamentState(
+                team_name=current.team_name if current else team_name,
+                normalized_team_name=norm,
+                alive=is_alive,
+                in_live_game=current.in_live_game if current else False,
+                has_upcoming_game=current.has_upcoming_game if current else False,
+                current_round=info.get("current_round") or (current.current_round if current else None),
+                game_id=current.game_id if current else None,
+                eliminated_round=eliminated_round,
+                fixed_settlement=fixed,
+                ncaa_status_mode=mode,
+                last_status_ts=time.time(),
+            )
+        return resolved
+
+    def infer_team_round_status(self, bracket_payload: dict[str, Any]) -> dict[str, dict[str, str | None]]:
+        # permissive parser: supports varying bracket JSON shapes.
+        out: dict[str, dict[str, str | None]] = {}
+        games = bracket_payload.get("games") if isinstance(bracket_payload, dict) else None
+        if isinstance(games, list):
+            for g in games:
+                round_name = g.get("round") or g.get("bracketRound")
+                winner = g.get("winner") or {}
+                loser = g.get("loser") or {}
+                winner_name = winner.get("name") or winner.get("shortName")
+                loser_name = loser.get("name") or loser.get("shortName")
+                if winner_name:
+                    out[winner_name] = {"current_round": round_name, "eliminated_round": None}
+                if loser_name:
+                    out[loser_name] = {"current_round": round_name, "eliminated_round": round_name}
+        return out
+
+    @staticmethod
+    def _extract_games(scoreboard_json: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
         for row in scoreboard_json:
             game_id = str(row.get("gameID") or row.get("id") or "")
             home = row.get("home") or row.get("homeTeam") or {}
@@ -108,19 +141,13 @@ class NcaaSource:
             if not (game_id and home_name and away_name):
                 continue
             out.append(
-                NcaaGame(
-                    game_id=game_id,
-                    home_team=home_name,
-                    away_team=away_name,
-                    game_state=str(row.get("gameState") or row.get("status") or ""),
-                    bracket_round=row.get("bracketRound"),
-                )
+                {
+                    "game_id": game_id,
+                    "home_name": home_name,
+                    "away_name": away_name,
+                    "state": str(row.get("gameState") or row.get("status") or "").lower(),
+                    "round": row.get("bracketRound"),
+                    "start_time": row.get("startTime") or row.get("startDate"),
+                }
             )
         return out
-
-    @staticmethod
-    def _round_from_date(current: dt.date) -> str:
-        for start, end, round_name in ROUND_BY_DATE_2026:
-            if start <= current <= end:
-                return round_name
-        return "ROUND_32"
