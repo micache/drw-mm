@@ -198,6 +198,9 @@ class SimulatorBot(Client):
     async def _live_odds_refresh_loop(self) -> None:
         while True:
             try:
+                if not self._should_poll_live_odds(time.time()):
+                    await asyncio.sleep(config.LIVE_ODDS_IDLE_SECONDS)
+                    continue
                 raws = await self.live_odds_source.fetch_games_odds()
                 live: dict[str, LiveGameProb] = {}
                 for raw in raws:
@@ -288,6 +291,16 @@ class SimulatorBot(Client):
             blocked = symbol in unresolved
             status = "unresolved" if blocked else "resolved"
             state.contracts[symbol] = ContractMeta(display_symbol=meta.display_symbol, team_name=meta.team_name, normalized_team_name=meta.normalized_team_name, seed=meta.seed, region=meta.region, mapping_status=status, trading_blocked=blocked)
+
+
+    def _should_poll_live_odds(self, now_ts: float) -> bool:
+        # Poll frequently during live games; otherwise only near scheduled tip-off windows.
+        for t in self.state_store.state.team_states.values():
+            if t.in_live_game:
+                return True
+            if t.next_game_start_ts is not None and abs(t.next_game_start_ts - now_ts) <= 60 * 45:
+                return True
+        return False
 
     def _recompute_fair_values(self) -> None:
         self.state_store.apply_fair_values(self.fv_engine.recompute_all(self.state_store.state))

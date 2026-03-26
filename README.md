@@ -39,3 +39,7 @@ python -m bot.force_order_smoke
 Places and cancels one small test BID to validate API/order plumbing.
 
 See `STRATEGY.md` for decision logic details.
+
+
+### Odds API budget tip
+With low The Odds API plans, keep `LIVE_ODDS_REFRESH_SECONDS=20` and rely on `LIVE_ODDS_IDLE_SECONDS` (default 900s) so high-frequency polling runs only during live/near-tip windows.

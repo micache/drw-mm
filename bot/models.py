@@ -162,6 +162,7 @@ class TeamTournamentState:
     has_upcoming_game: bool = False
     current_round: str | None = None
     game_id: str | None = None
+    next_game_start_ts: float | None = None
     eliminated_round: str | None = None
     fixed_settlement: float | None = None
     ncaa_status_mode: str = "unresolved"

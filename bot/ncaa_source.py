@@ -81,6 +81,7 @@ class NcaaSource:
                     has_upcoming_game=upcoming,
                     current_round=round_name,
                     game_id=game.get("game_id"),
+                    next_game_start_ts=_parse_start_ts(game.get("start_time")),
                     eliminated_round=round_name if finalish else None,
                     fixed_settlement=None,
                     ncaa_status_mode=("live" if in_live else "upcoming" if upcoming else "final_pending_bracket" if finalish else "alive_idle"),
@@ -105,6 +106,7 @@ class NcaaSource:
                 has_upcoming_game=current.has_upcoming_game if current else False,
                 current_round=info.get("current_round") or (current.current_round if current else None),
                 game_id=current.game_id if current else None,
+                next_game_start_ts=current.next_game_start_ts if current else None,
                 eliminated_round=eliminated_round,
                 fixed_settlement=fixed,
                 ncaa_status_mode=mode,
@@ -151,3 +153,21 @@ class NcaaSource:
                 }
             )
         return out
+
+
+def _parse_start_ts(value: Any) -> float | None:
+    if not value:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            return dt.datetime.fromisoformat(text).timestamp()
+        except Exception:
+            return None
+    return None

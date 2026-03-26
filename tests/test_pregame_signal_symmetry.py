@@ -11,7 +11,7 @@ def test_pregame_buy_sell_symmetry():
     state.set_source_timestamp("books", now)
     state.set_source_timestamp("ncaa", now)
     state.contracts["A"] = ContractMeta("A", "A", "a")
-    state.team_states["a"] = TeamTournamentState("A", "a", True, False, True, "ROUND_32", "g1", None, None, "upcoming", now)
+    state.team_states["a"] = TeamTournamentState("A", "a", True, False, True, "ROUND_32", "g1", now, None, None, "upcoming", now)
     state.live_game_probs["g1"] = LiveGameProb("g1", "a", "b", 0.5, 0.5, 4, 10_000, True, False, 1.0)
     state.fair_values["A"] = TeamFairValue("A", "A", 9.0, None, 10.0, 10.0, None, "pregame", now)
 

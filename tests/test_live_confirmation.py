@@ -12,7 +12,7 @@ def _mk_state(p):
     s.set_source_timestamp("books", now)
     s.set_source_timestamp("ncaa", now)
     s.contracts["A"] = ContractMeta("A", "A", "a")
-    s.team_states["a"] = TeamTournamentState("A", "a", True, True, False, "ROUND_32", "g1", None, None, "live", now)
+    s.team_states["a"] = TeamTournamentState("A", "a", True, True, False, "ROUND_32", "g1", now, None, None, "live", now)
     s.live_game_probs["g1"] = LiveGameProb("g1", "a", "b", p, 1 - p, 4, now, True, True, 1.0)
     s.fair_values["A"] = TeamFairValue("A", "A", 9.0, 10.0, None, 10.0, None, "live", now)
     s.order_books["A"] = OrderBook("A", now, bids=(BookLevel(11.2, 3),), asks=(BookLevel(8.8, 3),))
