@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 
 from bot.models import BotState, FillView, PositionView
@@ -11,6 +12,7 @@ class PnlEngine:
         pos = state.positions_raw.get(symbol, 0)
         avg = state.avg_entry_by_symbol.get(symbol, 0.0)
         signed = fill.traded_qty
+        state.entry_source_by_symbol[symbol] = "fills_in_memory"
 
         if pos == 0 or (pos > 0 and signed > 0) or (pos < 0 and signed < 0):
             new_pos = pos + signed
@@ -19,30 +21,27 @@ class PnlEngine:
             state.positions_raw[symbol] = new_pos
             return
 
-        # closing logic
         close_qty = min(abs(pos), abs(signed))
         realized = (fill.price - avg) * close_qty * (1 if pos > 0 else -1)
         state.realized_pnl_by_symbol[symbol] = state.realized_pnl_by_symbol.get(symbol, 0.0) + realized
         new_pos = pos + signed
         state.positions_raw[symbol] = new_pos
         if new_pos == 0:
-            state.avg_entry_by_symbol[symbol] = 0.0
+            state.avg_entry_by_symbol.pop(symbol, None)
         elif (pos > 0 > new_pos) or (pos < 0 < new_pos):
-            # Position flip: remaining size is a fresh entry at fill price.
             state.avg_entry_by_symbol[symbol] = fill.price
 
     @staticmethod
-    def compute_mark_price(book, last_trade: float | None = None, avg_entry: float | None = None, fv: float | None = None) -> float | None:
-        # Competition marking rule: open positions are marked to the last traded price.
-        if last_trade is not None:
-            return last_trade
-        if book and book.best_bid and book.best_ask:
-            return (book.best_bid.price + book.best_ask.price) / 2.0
-        if book and book.best_bid:
-            return book.best_bid.price
-        if book and book.best_ask:
-            return book.best_ask.price
-        return avg_entry if avg_entry is not None else fv
+    def compute_mark_price(book, last_trade: float | None = None, fv: float | None = None) -> tuple[float | None, str]:
+        bid = _clean_price(book.best_bid.price) if book and book.best_bid else None
+        ask = _clean_price(book.best_ask.price) if book and book.best_ask else None
+        if bid is not None and ask is not None:
+            return (bid + ask) / 2.0, "mid"
+        if last_trade is not None and last_trade > 0:
+            return last_trade, "last_trade"
+        if fv is not None and fv > 0:
+            return fv, "fair_value"
+        return bid or ask, "book_single_side" if (bid or ask) is not None else "none"
 
     def build_position_views(self, state: BotState) -> list[PositionView]:
         now = time.time()
@@ -52,28 +51,46 @@ class PnlEngine:
             book = state.order_books.get(symbol)
             fv = state.fair_values.get(symbol)
             team_state = state.team_states.get(meta.normalized_team_name) if meta else None
-            has_avg = symbol in state.avg_entry_by_symbol
-            avg = state.avg_entry_by_symbol.get(symbol, 0.0)
-            mark = self.compute_mark_price(book, last_trade=state.last_trade_by_symbol.get(symbol), avg_entry=avg, fv=fv.active_fv if fv else None)
-            if not has_avg:
-                avg = fv.active_fv if fv and fv.active_fv is not None else (mark or 0.0)
-            unrealized = ((mark or avg) - avg) * qty
+            avg = state.avg_entry_by_symbol.get(symbol)
+            entry_source = state.entry_source_by_symbol.get(symbol, "unknown_after_restart")
+            mark, mark_source = self.compute_mark_price(book, last_trade=state.last_trade_by_symbol.get(symbol), fv=fv.active_fv if fv else None)
+            unrealized = ((mark - avg) * qty) if (avg is not None and mark is not None) else None
+            edges = state.signal_edges_by_symbol.get(symbol, (None, None))
             out.append(
                 PositionView(
                     display_symbol=symbol,
                     team_name=meta.team_name if meta else symbol,
                     qty=qty,
                     avg_entry_price=avg,
-                    best_bid=book.best_bid.price if book and book.best_bid else None,
-                    best_ask=book.best_ask.price if book and book.best_ask else None,
+                    entry_source=entry_source,
+                    best_bid=_clean_price(book.best_bid.price) if book and book.best_bid else None,
+                    best_ask=_clean_price(book.best_ask.price) if book and book.best_ask else None,
                     mark_price=mark,
+                    mark_price_source=mark_source,
                     fair_value=fv.active_fv if fv else None,
+                    fair_value_source_timestamp=fv.source_timestamp if fv else None,
                     settlement_if_known=team_state.fixed_settlement if team_state else None,
                     unrealized_pnl=unrealized,
                     realized_pnl=state.realized_pnl_by_symbol.get(symbol, 0.0),
                     status="alive" if (team_state.alive if team_state else True) else "eliminated",
                     current_round=team_state.current_round if team_state else None,
+                    fv_mode=fv.fv_mode if fv else None,
+                    mapping_status=meta.mapping_status if meta else "unresolved",
+                    ncaa_status_mode=team_state.ncaa_status_mode if team_state else "unresolved",
+                    odds_quality_score=(state.live_game_probs.get(team_state.game_id).odds_quality_score if team_state and team_state.game_id and team_state.game_id in state.live_game_probs else None),
+                    signal_buy_edge=edges[0],
+                    signal_sell_edge=edges[1],
+                    last_strategy_reason=state.last_strategy_reason_by_symbol.get(symbol),
                     last_updated_ts=now,
                 )
             )
         return out
+
+
+def _clean_price(value: float | None) -> float | None:
+    if value is None:
+        return None
+    v = float(value)
+    if math.isclose(v, 0.0, abs_tol=1e-9) or v < 0:
+        return None
+    return v

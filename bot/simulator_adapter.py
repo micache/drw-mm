@@ -55,18 +55,31 @@ class SimulatorAdapter:
         for item in data:
             if not isinstance(item, dict):
                 continue
-            symbol = str(item.get("display_symbol", ""))
-            fills.append(
-                FillView(
-                    timestamp=float(item.get("timestamp", 0.0)),
-                    order_id=int(item.get("order_id", 0)),
-                    display_symbol=symbol,
-                    team_name=symbol,
-                    price=float(item.get("price", 0.0)),
-                    traded_qty=int(item.get("traded_quantity", item.get("quantity", 0))),
-                    remaining_qty=int(item.get("remaining_quantity", 0)),
+            symbol = str(item.get("display_symbol") or item.get("symbol") or "")
+            if not symbol:
+                continue
+            ts_raw = item.get("timestamp")
+            if ts_raw is None:
+                continue
+            px_raw = item.get("price", item.get("px"))
+            qty_raw = item.get("traded_qty", item.get("traded_quantity", item.get("quantity")))
+            oid_raw = item.get("order_id")
+            if px_raw is None or qty_raw is None or oid_raw is None:
+                continue
+            try:
+                fills.append(
+                    FillView(
+                        timestamp=float(ts_raw),
+                        order_id=int(oid_raw),
+                        display_symbol=symbol,
+                        team_name=symbol,
+                        price=float(px_raw),
+                        traded_qty=int(qty_raw),
+                        remaining_qty=int(item.get("remaining_qty", item.get("remaining_quantity", 0))),
+                    )
                 )
-            )
+            except (TypeError, ValueError):
+                continue
         fills.sort(key=lambda x: (x.timestamp, x.order_id))
         return fills
 
@@ -124,23 +137,38 @@ def _extract_total_pnl(account: dict[str, Any]) -> float | None:
 
 
 def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[str, float]]:
-    if not isinstance(raw_positions, dict):
-        return {}, {}
     positions: dict[str, int] = {}
     avg_entries: dict[str, float] = {}
-    for symbol, value in raw_positions.items():
+
+    if isinstance(raw_positions, list):
+        iterable = []
+        for row in raw_positions:
+            if isinstance(row, dict):
+                sym = row.get("display_symbol") or row.get("symbol")
+                if sym is not None:
+                    iterable.append((str(sym), row))
+    elif isinstance(raw_positions, dict):
+        iterable = list(raw_positions.items())
+    else:
+        return positions, avg_entries
+
+    for symbol, value in iterable:
         qty = 0
         avg: float | None = None
         if isinstance(value, dict):
             qty = int(value.get("qty", value.get("quantity", value.get("position", 0))))
-            avg_val = value.get("avg_entry_price", value.get("average_price", value.get("avg_price", value.get("cost_basis"))))
+            avg_val = value.get(
+                "avg_entry_price",
+                value.get("average_entry_price", value.get("average_price", value.get("avg_price", value.get("cost_basis")))),
+            )
             if isinstance(avg_val, (int, float)):
                 avg = float(avg_val)
         elif isinstance(value, (int, float)):
             qty = int(value)
+
         if qty == 0:
             continue
         positions[str(symbol)] = qty
-        if avg is not None:
+        if avg is not None and avg > 0:
             avg_entries[str(symbol)] = avg
     return positions, avg_entries
