@@ -305,6 +305,8 @@ class SimulatorBot(Client):
         # do not default to zero-cost for pre-existing inventory.
         state = self.state_store.state
         current_positions = dict(state.positions_raw)
+        snapshot_avg = dict(state.avg_entry_by_symbol)
+        snapshot_entry_source = dict(state.entry_source_by_symbol)
         state.fills = []
         state.avg_entry_by_symbol.clear()
         state.realized_pnl_by_symbol.clear()
@@ -324,3 +326,11 @@ class SimulatorBot(Client):
 
         # Keep server account positions authoritative after replaying fills.
         state.positions_raw = current_positions
+        # If fill history is partial, preserve snapshot averages for symbols that
+        # were not reconstructable from fills.
+        for symbol, qty in current_positions.items():
+            if qty == 0:
+                continue
+            if symbol not in state.avg_entry_by_symbol and symbol in snapshot_avg:
+                state.avg_entry_by_symbol[symbol] = snapshot_avg[symbol]
+                state.entry_source_by_symbol[symbol] = snapshot_entry_source.get(symbol, "server_snapshot")
