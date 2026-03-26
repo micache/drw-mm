@@ -115,7 +115,7 @@ class PositionView:
     fair_value: float | None
     fair_value_source_timestamp: float | None
     settlement_if_known: float | None
-    unrealized_pnl: float
+    unrealized_pnl: float | None
     realized_pnl: float
     status: str
     current_round: str | None

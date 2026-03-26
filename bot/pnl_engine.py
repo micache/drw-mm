@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 
 from bot.models import BotState, FillView, PositionView
@@ -32,13 +33,15 @@ class PnlEngine:
 
     @staticmethod
     def compute_mark_price(book, last_trade: float | None = None, fv: float | None = None) -> tuple[float | None, str]:
-        if book and book.best_bid and book.best_ask:
-            return (book.best_bid.price + book.best_ask.price) / 2.0, "mid"
-        if last_trade is not None:
+        bid = _clean_price(book.best_bid.price) if book and book.best_bid else None
+        ask = _clean_price(book.best_ask.price) if book and book.best_ask else None
+        if bid is not None and ask is not None:
+            return (bid + ask) / 2.0, "mid"
+        if last_trade is not None and last_trade > 0:
             return last_trade, "last_trade"
-        if fv is not None:
+        if fv is not None and fv > 0:
             return fv, "fair_value"
-        return None, "none"
+        return bid or ask, "book_single_side" if (bid or ask) is not None else "none"
 
     def build_position_views(self, state: BotState) -> list[PositionView]:
         now = time.time()
@@ -51,7 +54,7 @@ class PnlEngine:
             avg = state.avg_entry_by_symbol.get(symbol)
             entry_source = state.entry_source_by_symbol.get(symbol, "unknown_after_restart")
             mark, mark_source = self.compute_mark_price(book, last_trade=state.last_trade_by_symbol.get(symbol), fv=fv.active_fv if fv else None)
-            unrealized = 0.0 if avg is None or mark is None else (mark - avg) * qty
+            unrealized = ((mark - avg) * qty) if (avg is not None and mark is not None) else None
             edges = state.signal_edges_by_symbol.get(symbol, (None, None))
             out.append(
                 PositionView(
@@ -60,8 +63,8 @@ class PnlEngine:
                     qty=qty,
                     avg_entry_price=avg,
                     entry_source=entry_source,
-                    best_bid=book.best_bid.price if book and book.best_bid else None,
-                    best_ask=book.best_ask.price if book and book.best_ask else None,
+                    best_bid=_clean_price(book.best_bid.price) if book and book.best_bid else None,
+                    best_ask=_clean_price(book.best_ask.price) if book and book.best_ask else None,
                     mark_price=mark,
                     mark_price_source=mark_source,
                     fair_value=fv.active_fv if fv else None,
@@ -82,3 +85,12 @@ class PnlEngine:
                 )
             )
         return out
+
+
+def _clean_price(value: float | None) -> float | None:
+    if value is None:
+        return None
+    v = float(value)
+    if math.isclose(v, 0.0, abs_tol=1e-9) or v < 0:
+        return None
+    return v

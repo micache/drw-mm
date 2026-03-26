@@ -36,30 +36,30 @@ class Reporter:
                 p.mark_price,
                 p.mark_price_source,
                 p.fair_value,
-                p.fair_value_source_timestamp,
-                p.fv_mode,
-                p.mapping_status,
-                p.ncaa_status_mode,
-                p.odds_quality_score,
-                p.signal_buy_edge,
-                p.signal_sell_edge,
                 p.last_strategy_reason,
                 p.unrealized_pnl,
             ])
         self._atomic_csv(
             config.POSITIONS_CSV,
             [
-                "display_symbol", "team_name", "qty", "avg_entry_price_est", "entry_source", "best_bid", "best_ask",
-                "mark_price", "mark_price_source", "fair_value", "fair_value_source_timestamp", "fv_mode",
-                "mapping_status", "ncaa_status_mode", "odds_quality_score", "signal_buy_edge", "signal_sell_edge",
-                "last_strategy_reason", "unrealized_pnl",
+                "display_symbol",
+                "team_name",
+                "qty",
+                "avg_entry_price_est",
+                "entry_source",
+                "best_bid",
+                "best_ask",
+                "mark_price",
+                "fair_value",
+                "last_strategy_reason",
+                "unrealized_pnl",
             ],
             rows,
         )
 
     def _write_orders(self, orders: dict[int, OrderView]) -> None:
-        rows = [[o.order_id, o.display_symbol, o.team_name, o.side, o.price, o.qty_signed, o.qty_abs, o.canceled] for o in orders.values()]
-        self._atomic_csv(config.ORDERS_CSV, ["order_id", "display_symbol", "team_name", "side", "price", "qty_signed", "qty_abs", "canceled"], rows)
+        rows = [[o.order_id, o.display_symbol, o.team_name, o.side, o.price, o.qty_signed, o.qty_abs] for o in orders.values()]
+        self._atomic_csv(config.ORDERS_CSV, ["order_id", "display_symbol", "team_name", "side", "price", "qty_signed", "qty_abs"], rows)
 
     def _append_fills(self, fills: list[FillView]) -> None:
         path = config.FILLS_CSV
@@ -68,17 +68,17 @@ class Reporter:
         with path.open("a", newline="") as f:
             writer = csv.writer(f)
             if not exists:
-                writer.writerow(["order_id", "display_symbol", "team_name", "price", "traded_qty", "remaining_qty"])
+                writer.writerow(["timestamp", "order_id", "display_symbol", "price", "traded_qty"])
             for fill in fills:
                 key = (fill.timestamp, fill.order_id, fill.display_symbol, fill.price, fill.traded_qty)
                 if key in self.last_fill_keys:
                     continue
                 self.last_fill_keys.add(key)
-                writer.writerow([fill.order_id, fill.display_symbol, fill.team_name, fill.price, fill.traded_qty, fill.remaining_qty])
+                writer.writerow([fill.timestamp, fill.order_id, fill.display_symbol, fill.price, fill.traded_qty])
 
     def _write_fair_values(self, state: BotState) -> None:
-        rows = [[x.display_symbol, x.team_name, x.baseline_fv, x.pregame_fv, x.live_fv, x.active_fv, x.fixed_settlement, x.fv_mode] for x in state.fair_values.values()]
-        self._atomic_csv(config.FAIR_VALUES_CSV, ["display_symbol", "team_name", "baseline_fv", "pregame_fv", "live_fv", "active_fv", "fixed_settlement", "fv_mode"], rows)
+        rows = [[x.display_symbol, x.team_name, x.active_fv] for x in state.fair_values.values()]
+        self._atomic_csv(config.FAIR_VALUES_CSV, ["display_symbol", "team_name", "fair_value"], rows)
 
     @staticmethod
     def _atomic_csv(path: Path, headers: list[str], rows: list[list[object]]) -> None:
