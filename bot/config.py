@@ -13,7 +13,12 @@ PLAYOFFSTATUS_URL = os.getenv(
 )
 NCAA_API_BASE = os.getenv("NCAA_API_BASE", "https://ncaa-api.henrygd.me")
 ODDS_API_BASE = os.getenv("ODDS_API_BASE", "https://api.the-odds-api.com/v4")
-ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
+ODDS_API_KEY = (
+    os.getenv("ODDS_API_KEY")
+    or os.getenv("THE_ODDS_API_KEY")
+    or os.getenv("ODD_API_KEY")
+    or ""
+)
 ODDS_SPORT_KEY = os.getenv("ODDS_SPORT_KEY", "basketball_ncaab")
 
 ORDER_TYPE = os.getenv("SIM_ORDER_TYPE", "LIMIT")
@@ -25,6 +30,7 @@ PLAYOFFSTATUS_REFRESH_SECONDS = float(os.getenv("PLAYOFFSTATUS_REFRESH_SECONDS",
 NCAA_SCOREBOARD_REFRESH_SECONDS = float(os.getenv("NCAA_SCOREBOARD_REFRESH_SECONDS", "20"))
 NCAA_BRACKET_REFRESH_SECONDS = float(os.getenv("NCAA_BRACKET_REFRESH_SECONDS", "90"))
 LIVE_ODDS_REFRESH_SECONDS = float(os.getenv("LIVE_ODDS_REFRESH_SECONDS", "90"))
+LIVE_ODDS_IDLE_SECONDS = float(os.getenv("LIVE_ODDS_IDLE_SECONDS", "900"))
 CSV_DEBOUNCE_SECONDS = float(os.getenv("CSV_DEBOUNCE_SECONDS", "1"))
 
 MAX_ABS_POSITION = int(os.getenv("MAX_ABS_POSITION", "100"))

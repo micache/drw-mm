@@ -180,11 +180,12 @@ def _parse_top_level_avg_entries(account: dict[str, Any], positions: dict[str, i
         if not isinstance(raw, dict):
             continue
         for symbol, value in raw.items():
-            if symbol not in positions:
+            sym = str(symbol)
+            if sym not in positions:
                 continue
             parsed = _to_float(value)
             if parsed is not None and parsed > 0:
-                out[str(symbol)] = parsed
+                out[sym] = parsed
     return out
 
 
@@ -279,7 +280,8 @@ def _parse_nested_position_avg_entries(account: dict[str, Any], positions: dict[
         if not isinstance(raw, dict):
             continue
         for symbol, payload in raw.items():
-            if symbol not in positions:
+            sym = str(symbol)
+            if sym not in positions:
                 continue
             avg: float | None = None
             if isinstance(payload, dict):
@@ -301,7 +303,7 @@ def _parse_nested_position_avg_entries(account: dict[str, Any], positions: dict[
             else:
                 avg = _to_float(payload)
             if avg is not None and avg > 0:
-                out[str(symbol)] = avg
+                out[sym] = avg
     return out
 
 

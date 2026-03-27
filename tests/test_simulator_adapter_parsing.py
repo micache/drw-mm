@@ -69,3 +69,16 @@ def test_sync_account_reads_nested_position_stats_avg_entries():
     _, _, positions, _, avgs = asyncio.run(adapter.sync_account())
     assert positions["A"] == -3
     assert avgs["A"] == 6.25
+
+
+def test_sync_account_reads_avg_entries_with_non_string_symbol_keys():
+    account = {
+        "cash": 10,
+        "margin": 0,
+        "positions": [{"display_symbol": "101", "quantity": 2}],
+        "avg_entry_prices": {101: "4.5"},
+    }
+    adapter = SimulatorAdapter(DummyClient([], account))
+    _, _, positions, _, avgs = asyncio.run(adapter.sync_account())
+    assert positions["101"] == 2
+    assert avgs["101"] == 4.5

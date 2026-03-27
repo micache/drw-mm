@@ -311,6 +311,10 @@ class SimulatorBot(Client):
 
     def _should_poll_live_odds(self, now_ts: float) -> bool:
         # Poll frequently during live games; otherwise only near scheduled tip-off windows.
+        # If NCAA team states are temporarily unavailable, keep polling so odds
+        # still flow and dependent strategies/mapping do not stall.
+        if not self.state_store.state.team_states:
+            return True
         for t in self.state_store.state.team_states.values():
             if t.in_live_game:
                 return True
