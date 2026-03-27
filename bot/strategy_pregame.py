@@ -28,9 +28,9 @@ class PregameStrategy:
                 continue
             if state.source_age("odds", now) > config.PREGAME_ODDS_FRESHNESS_SECONDS:
                 continue
-            if not tstate.game_id or tstate.game_id not in state.live_game_probs:
+            game = _resolve_game_for_team(state, contract.normalized_team_name, tstate.game_id)
+            if not game:
                 continue
-            game = state.live_game_probs[tstate.game_id]
             if game.bookmakers_used < config.PREGAME_MIN_BOOKMAKERS:
                 continue
 
@@ -49,3 +49,17 @@ class PregameStrategy:
                     if self.risk_engine.check_order(state, symbol, "sell", book.best_bid.price, qty, "pregame_dislocation").ok:
                         out.append(CandidateOrder(symbol, "sell", book.best_bid.price, qty, "pregame_dislocation_sell"))
         return out
+
+
+def _resolve_game_for_team(state: BotState, normalized_team_name: str, game_id: str | None):
+    if game_id and game_id in state.live_game_probs:
+        return state.live_game_probs[game_id]
+    matches = [
+        game
+        for game in state.live_game_probs.values()
+        if normalized_team_name in (game.home_team_normalized, game.away_team_normalized)
+    ]
+    if not matches:
+        return None
+    matches.sort(key=lambda g: (g.source_timestamp, g.bookmakers_used), reverse=True)
+    return matches[0]

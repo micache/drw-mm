@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import statistics
 import time
 from typing import Any
@@ -8,6 +9,8 @@ import aiohttp
 
 from bot.models import LiveGameProb
 from bot.team_mapping import TeamMapper
+
+logger = logging.getLogger(__name__)
 
 
 class LiveOddsSource:
@@ -18,19 +21,26 @@ class LiveOddsSource:
         self.sport_key = sport_key
         self.mapper = mapper
         self._last_home_prob: dict[str, float] = {}
+        self._warned_missing_api_key = False
 
     async def fetch_games_odds(self) -> list[dict[str, Any]]:
         if not self.api_key:
+            if not self._warned_missing_api_key:
+                logger.warning("ODDS_API_KEY is empty; live odds source disabled")
+                self._warned_missing_api_key = True
             return []
         url = f"{self.base_url}/sports/{self.sport_key}/odds"
         params = {"apiKey": self.api_key, "regions": "us", "markets": "h2h", "oddsFormat": "decimal"}
         try:
             async with self.session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status >= 400:
+                    body = await resp.text()
+                    logger.warning("odds request failed status=%s body=%s", resp.status, body[:300])
                     return []
                 data = await resp.json()
                 return data if isinstance(data, list) else []
-        except Exception:
+        except Exception as exc:
+            logger.warning("odds request exception: %s", exc)
             return []
 
     def extract_moneyline_probs(self, raw_game: dict[str, Any]) -> LiveGameProb | None:

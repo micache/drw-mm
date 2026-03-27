@@ -26,6 +26,7 @@ class SimulatorAdapter:
         margin = float(data.get("margin", 0.0))
         positions, avg_entries = _parse_account_positions(data.get("positions", {}))
         avg_entries.update(_parse_top_level_avg_entries(data, positions))
+        avg_entries.update(_parse_nested_position_avg_entries(data, positions))
         total_pnl = _extract_total_pnl(data)
         self.client.cash = cash
         self.client.margin = margin
@@ -55,7 +56,14 @@ class SimulatorAdapter:
         data = await self.client._get("fills")
         fills: list[FillView] = []
         for item in _iter_fill_items(data):
-            symbol = str(item.get("display_symbol") or item.get("displaySymbol") or item.get("symbol") or "")
+            symbol = str(
+                item.get("display_symbol")
+                or item.get("displaySymbol")
+                or item.get("symbol")
+                or item.get("contract_id")
+                or item.get("contractId")
+                or ""
+            )
             if not symbol:
                 continue
             ts_raw = item.get("timestamp", item.get("ts", item.get("time")))
@@ -69,9 +77,9 @@ class SimulatorAdapter:
             qty = _to_int(qty_raw)
             if qty is None:
                 continue
-            if side == "sell" and qty > 0:
+            if side in {"sell", "ask"} and qty > 0:
                 qty = -qty
-            if side == "buy" and qty < 0:
+            if side in {"buy", "bid"} and qty < 0:
                 qty = -qty
 
             timestamp = _to_float(ts_raw)
@@ -154,7 +162,20 @@ def _extract_total_pnl(account: dict[str, Any]) -> float | None:
 
 def _parse_top_level_avg_entries(account: dict[str, Any], positions: dict[str, int]) -> dict[str, float]:
     out: dict[str, float] = {}
-    for key in ("avg_entry_prices", "average_entry_prices", "avg_prices"):
+    for key in (
+        "avg_entry_prices",
+        "average_entry_prices",
+        "avg_prices",
+        "avg_entry_price",
+        "average_entry_price",
+        "entry_prices",
+        "position_avg_entry",
+        "position_avg_entries",
+        "avgEntryPrices",
+        "averageEntryPrices",
+        "cost_basis",
+        "costBasis",
+    ):
         raw = account.get(key)
         if not isinstance(raw, dict):
             continue
@@ -175,7 +196,7 @@ def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[s
         iterable = []
         for row in raw_positions:
             if isinstance(row, dict):
-                sym = row.get("display_symbol") or row.get("displaySymbol") or row.get("symbol")
+                sym = row.get("display_symbol") or row.get("displaySymbol") or row.get("symbol") or row.get("contract_id") or row.get("contractId")
                 if sym is not None:
                     iterable.append((str(sym), row))
     elif isinstance(raw_positions, dict):
@@ -187,12 +208,59 @@ def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[s
         qty = 0
         avg: float | None = None
         if isinstance(value, dict):
-            qty = _to_int(value.get("qty", value.get("quantity", value.get("position", 0)))) or 0
+            qty = _to_int(
+                value.get(
+                    "qty",
+                    value.get(
+                        "quantity",
+                        value.get(
+                            "position",
+                            value.get("net_qty", value.get("net_quantity", value.get("signed_qty", 0))),
+                        ),
+                    ),
+                )
+            ) or 0
+            side = str(value.get("side", "")).lower()
+            if qty and side in {"sell", "ask"} and qty > 0:
+                qty = -qty
             avg_val = value.get(
                 "avg_entry_price",
-                value.get("average_entry_price", value.get("average_price", value.get("avg_price", value.get("cost_basis")))),
+                value.get(
+                    "avgEntryPrice",
+                    value.get(
+                        "average_entry_price",
+                        value.get(
+                            "averageEntryPrice",
+                            value.get(
+                                "average_price",
+                                value.get(
+                                    "avg_price",
+                                    value.get(
+                                        "entry_price",
+                                        value.get(
+                                            "avg_fill_price",
+                                            value.get("avgFillPrice", value.get("entryPrice", value.get("cost_basis"))),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
             )
             avg = _to_float(avg_val)
+            if avg is None and qty:
+                notional = _to_float(
+                    value.get(
+                        "cost_basis_total",
+                        value.get(
+                            "position_cost",
+                            value.get("position_notional", value.get("notional", value.get("cost_basis"))),
+                        ),
+                    )
+                )
+                if notional is not None:
+                    avg = abs(notional) / max(1, abs(qty))
         elif isinstance(value, (int, float, str)):
             qty = _to_int(value) or 0
 
@@ -202,6 +270,39 @@ def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[s
         if avg is not None and avg > 0:
             avg_entries[str(symbol)] = avg
     return positions, avg_entries
+
+
+def _parse_nested_position_avg_entries(account: dict[str, Any], positions: dict[str, int]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for key in ("position_stats", "positions_meta", "positionStats", "positionsMeta"):
+        raw = account.get(key)
+        if not isinstance(raw, dict):
+            continue
+        for symbol, payload in raw.items():
+            if symbol not in positions:
+                continue
+            avg: float | None = None
+            if isinstance(payload, dict):
+                avg = _to_float(
+                    payload.get(
+                        "avg_entry_price",
+                        payload.get(
+                            "avgEntryPrice",
+                            payload.get(
+                                "average_entry_price",
+                                payload.get(
+                                    "averageEntryPrice",
+                                    payload.get("avg_price", payload.get("entry_price", payload.get("entryPrice"))),
+                                ),
+                            ),
+                        ),
+                    )
+                )
+            else:
+                avg = _to_float(payload)
+            if avg is not None and avg > 0:
+                out[str(symbol)] = avg
+    return out
 
 
 def _iter_fill_items(data: Any) -> list[dict[str, Any]]:

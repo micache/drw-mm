@@ -26,7 +26,7 @@ class LiveStrategy:
             tstate = state.team_states.get(contract.normalized_team_name)
             if not tstate or not tstate.game_id:
                 continue
-            game = state.live_game_probs.get(tstate.game_id)
+            game = _resolve_game_for_team(state, contract.normalized_team_name, tstate.game_id)
             if not game or (now - game.source_timestamp) > config.LIVE_ODDS_FRESHNESS_SECONDS:
                 continue
             current = game.home_win_prob if contract.normalized_team_name == game.home_team_normalized else game.away_win_prob
@@ -68,3 +68,17 @@ class LiveStrategy:
                 if self.risk_engine.check_order(state, symbol, "sell", book.best_bid.price, qty, "live_reduce").ok:
                     out.append(CandidateOrder(symbol, "sell", book.best_bid.price, qty, "live_reduce_sell"))
         return out
+
+
+def _resolve_game_for_team(state: BotState, normalized_team_name: str, game_id: str | None):
+    if game_id and game_id in state.live_game_probs:
+        return state.live_game_probs[game_id]
+    matches = [
+        game
+        for game in state.live_game_probs.values()
+        if normalized_team_name in (game.home_team_normalized, game.away_team_normalized)
+    ]
+    if not matches:
+        return None
+    matches.sort(key=lambda g: (g.source_timestamp, g.bookmakers_used), reverse=True)
+    return matches[0]

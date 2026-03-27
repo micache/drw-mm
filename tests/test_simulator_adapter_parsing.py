@@ -56,3 +56,16 @@ def test_sync_fills_accepts_tuple_rows_payload():
     assert len(fills) == 1
     assert fills[0].display_symbol == "A"
     assert fills[0].traded_qty == -2
+
+
+def test_sync_account_reads_nested_position_stats_avg_entries():
+    account = {
+        "cash": 10,
+        "margin": 0,
+        "positions": {"A": {"quantity": -3}},
+        "position_stats": {"A": {"entry_price": 6.25}},
+    }
+    adapter = SimulatorAdapter(DummyClient([], account))
+    _, _, positions, _, avgs = asyncio.run(adapter.sync_account())
+    assert positions["A"] == -3
+    assert avgs["A"] == 6.25

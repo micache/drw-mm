@@ -77,7 +77,93 @@ class TeamMapper:
         for key in self.normalized_to_symbol:
             if key.replace(" ", "") == compact:
                 return key
+        for candidate in _candidate_team_names(norm):
+            if candidate in self.normalized_to_symbol:
+                return candidate
+            compact_candidate = candidate.replace(" ", "")
+            for key in self.normalized_to_symbol:
+                if key.replace(" ", "") == compact_candidate:
+                    return key
         return None
+
+
+_COMMON_MASCOT_TOKENS = {
+    "eagles",
+    "hawks",
+    "wildcats",
+    "bulldogs",
+    "bearcats",
+    "bears",
+    "tigers",
+    "lions",
+    "wolves",
+    "wolfpack",
+    "knights",
+    "huskies",
+    "bruins",
+    "spartans",
+    "mustangs",
+    "cougars",
+    "rams",
+    "devils",
+    "blue",
+    "bluejays",
+    "jays",
+    "hawks",
+    "pirates",
+    "raiders",
+    "cavaliers",
+    "volunteers",
+    "longhorns",
+    "illini",
+    "jayhawks",
+    "aggies",
+    "terrapins",
+    "cyclones",
+    "wolverines",
+    "cardinals",
+    "panthers",
+    "trojans",
+    "horned",
+    "frogs",
+    "redhawks",
+    "buckeyes",
+    "boilermakers",
+    "gaels",
+    "demon",
+    "deacons",
+    "storm",
+    "johnnies",
+    "orange",
+    "hoosiers",
+    "badgers",
+    "tar",
+    "heels",
+}
+
+
+def _candidate_team_names(norm: str) -> list[str]:
+    tokens = [t for t in norm.split(" ") if t]
+    if not tokens:
+        return []
+
+    # Generate progressively shorter candidates by stripping likely mascot
+    # suffix words from external feeds (e.g. "byu cougars" -> "byu").
+    out: list[str] = []
+    working = list(tokens)
+    while len(working) > 1 and working[-1] in _COMMON_MASCOT_TOKENS:
+        working = working[:-1]
+        candidate = " ".join(working)
+        if candidate and candidate not in out:
+            out.append(candidate)
+
+    # Also try dropping only the final token once for generic suffixes not in
+    # the allowlist above.
+    if len(tokens) > 1:
+        one_drop = " ".join(tokens[:-1])
+        if one_drop and one_drop not in out:
+            out.append(one_drop)
+    return out
 
 
 def validate_symbol_mapping(

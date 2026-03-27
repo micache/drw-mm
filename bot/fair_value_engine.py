@@ -110,9 +110,9 @@ class FairValueEngine:
 
     @staticmethod
     def _extract_probabilities(team_state, live_probs) -> tuple[float | None, float | None]:
-        if not team_state or not team_state.game_id:
+        if not team_state:
             return None, None
-        game = live_probs.get(team_state.game_id)
+        game = _resolve_game_for_team(team_state, live_probs)
         if not game:
             return None, None
         if team_state.normalized_team_name == game.home_team_normalized:
@@ -126,3 +126,19 @@ class FairValueEngine:
         if team_state.has_upcoming_game:
             return None, p
         return None, None
+
+
+def _resolve_game_for_team(team_state, live_probs):
+    # Prefer explicit NCAA game id when an exact key exists, but fall back to
+    # team-name matching because Odds API event ids are different ids.
+    if team_state.game_id and team_state.game_id in live_probs:
+        return live_probs[team_state.game_id]
+    matches = [
+        game
+        for game in live_probs.values()
+        if team_state.normalized_team_name in (game.home_team_normalized, game.away_team_normalized)
+    ]
+    if not matches:
+        return None
+    matches.sort(key=lambda g: (g.source_timestamp, g.bookmakers_used), reverse=True)
+    return matches[0]

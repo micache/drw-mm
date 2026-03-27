@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import logging
 import sys
 import time
@@ -209,6 +210,8 @@ class SimulatorBot(Client):
                         continue
                     live[parsed.game_id] = parsed
                 self.state_store.apply_live_game_probs(live)
+                if raws:
+                    logger.info("live odds refresh: raw_games=%d parsed_games=%d", len(raws), len(live))
                 self._recompute_fair_values()
                 self._strategy_event.set()
             except Exception as exc:
@@ -273,8 +276,21 @@ class SimulatorBot(Client):
         self.state_store.apply_team_states(team_states)
         probs = await self.playoff_source.refresh()
         self.state_store.apply_probabilities(probs)
+        raws = await self.live_odds_source.fetch_games_odds()
+        live: dict[str, LiveGameProb] = {}
+        for raw in raws:
+            parsed = self.live_odds_source.extract_moneyline_probs(raw)
+            if parsed:
+                live[parsed.game_id] = parsed
+        self.state_store.apply_live_game_probs(live)
         self._validate_mappings()
-        logger.info("external refresh: team_states=%d playoff_probs=%d", len(team_states), len(probs))
+        logger.info(
+            "external refresh: team_states=%d playoff_probs=%d odds_raw=%d odds_parsed=%d",
+            len(team_states),
+            len(probs),
+            len(raws),
+            len(live),
+        )
 
 
     def _validate_mappings(self) -> None:
@@ -306,11 +322,15 @@ class SimulatorBot(Client):
         self.state_store.apply_fair_values(self.fv_engine.recompute_all(self.state_store.state))
 
     async def _seed_pnl_from_fill_history(self) -> None:
+        fills: list[FillView] = []
         try:
             fills = await self.adapter.sync_fills()
         except Exception as exc:
             logger.warning("historical fills sync failed: %s", exc)
-            return
+        if not fills:
+            fills = self._load_local_fills_for_seed()
+            if fills:
+                logger.info("seeded pnl from local fills.csv rows=%d", len(fills))
         if not fills:
             return
 
@@ -347,3 +367,52 @@ class SimulatorBot(Client):
             if symbol not in state.avg_entry_by_symbol and symbol in snapshot_avg:
                 state.avg_entry_by_symbol[symbol] = snapshot_avg[symbol]
                 state.entry_source_by_symbol[symbol] = snapshot_entry_source.get(symbol, "server_snapshot")
+
+    def _load_local_fills_for_seed(self) -> list[FillView]:
+        path = config.FILLS_CSV
+        if not path.exists():
+            return []
+        fills: list[FillView] = []
+        try:
+            with path.open("r", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    symbol = (row.get("display_symbol") or "").strip()
+                    if not symbol:
+                        continue
+                    ts = _safe_float(row.get("timestamp"))
+                    oid = _safe_int(row.get("order_id"))
+                    px = _safe_float(row.get("price"))
+                    qty = _safe_int(row.get("traded_qty"))
+                    if ts is None or oid is None or px is None or qty is None:
+                        continue
+                    fills.append(
+                        FillView(
+                            timestamp=ts,
+                            order_id=oid,
+                            display_symbol=symbol,
+                            team_name=self.state_store.state.contracts.get(symbol).team_name if symbol in self.state_store.state.contracts else symbol,
+                            price=px,
+                            traded_qty=qty,
+                            remaining_qty=0,
+                        )
+                    )
+        except Exception as exc:
+            logger.warning("failed to parse local fills csv for pnl seed: %s", exc)
+            return []
+        fills.sort(key=lambda x: (x.timestamp, x.order_id))
+        return fills
+
+
+def _safe_float(value: str | None) -> float | None:
+    try:
+        return float(value) if value is not None and value != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(value: str | None) -> int | None:
+    try:
+        return int(float(value)) if value is not None and value != "" else None
+    except (TypeError, ValueError):
+        return None
