@@ -173,8 +173,18 @@ def _parse_top_level_avg_entries(account: dict[str, Any], positions: dict[str, i
         "position_avg_entries",
         "avgEntryPrices",
         "averageEntryPrices",
+        "averagePrices",
+        "avgPrices",
         "cost_basis",
         "costBasis",
+        "avg_cost",
+        "avgCost",
+        "average_cost",
+        "averageCost",
+        "avg_px",
+        "avgPx",
+        "average_px",
+        "averagePx",
     ):
         raw = account.get(key)
         if not isinstance(raw, dict):
@@ -240,7 +250,34 @@ def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[s
                                         "entry_price",
                                         value.get(
                                             "avg_fill_price",
-                                            value.get("avgFillPrice", value.get("entryPrice", value.get("cost_basis"))),
+                                            value.get(
+                                                "avgFillPrice",
+                                                value.get(
+                                                    "entryPrice",
+                                                    value.get(
+                                                        "cost_basis",
+                                                        value.get(
+                                                            "avg_cost",
+                                                            value.get(
+                                                                "avgCost",
+                                                                value.get(
+                                                                    "average_cost",
+                                                                    value.get(
+                                                                        "averageCost",
+                                                                        value.get(
+                                                                            "avg_px",
+                                                                            value.get(
+                                                                                "avgPx",
+                                                                                value.get("average_px", value.get("averagePx")),
+                                                                            ),
+                                                                        ),
+                                                                    ),
+                                                                ),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                ),
+                                            ),
                                         ),
                                     ),
                                 ),
@@ -275,7 +312,14 @@ def _parse_account_positions(raw_positions: Any) -> tuple[dict[str, int], dict[s
 
 def _parse_nested_position_avg_entries(account: dict[str, Any], positions: dict[str, int]) -> dict[str, float]:
     out: dict[str, float] = {}
-    for key in ("position_stats", "positions_meta", "positionStats", "positionsMeta"):
+    for key in (
+        "position_stats",
+        "positions_meta",
+        "positionStats",
+        "positionsMeta",
+        "position_costs",
+        "positionCosts",
+    ):
         raw = account.get(key)
         if not isinstance(raw, dict):
             continue
@@ -294,7 +338,28 @@ def _parse_nested_position_avg_entries(account: dict[str, Any], positions: dict[
                                 "average_entry_price",
                                 payload.get(
                                     "averageEntryPrice",
-                                    payload.get("avg_price", payload.get("entry_price", payload.get("entryPrice"))),
+                                    payload.get(
+                                        "avg_price",
+                                        payload.get(
+                                            "entry_price",
+                                            payload.get(
+                                                "entryPrice",
+                                                payload.get(
+                                                    "avg_cost",
+                                                    payload.get(
+                                                        "avgCost",
+                                                        payload.get(
+                                                            "average_cost",
+                                                            payload.get(
+                                                                "averageCost",
+                                                                payload.get("avg_px", payload.get("avgPx")),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                ),
+                                            ),
+                                        ),
+                                    ),
                                 ),
                             ),
                         ),

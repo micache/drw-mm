@@ -38,8 +38,16 @@ logger = logging.getLogger(__name__)
 
 
 class SimulatorBot(Client):
-    def __init__(self, session: aiohttp.ClientSession, game_id: int, token: str, base_url: str = config.BASE_URL) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        game_id: int,
+        token: str,
+        base_url: str = config.BASE_URL,
+        use_betting_odds: bool = False,
+    ) -> None:
         super().__init__(session=session, game_id=game_id, token=token, base_url=base_url)
+        self.use_betting_odds = use_betting_odds
         self.mapper = TeamMapper()
         self.state_store = StateStore()
         self.adapter = SimulatorAdapter(self)
@@ -82,6 +90,7 @@ class SimulatorBot(Client):
             )
         self.state_store.state.contracts = contracts
         await self._seed_pnl_from_fill_history()
+        self._backfill_missing_avg_entries_from_mark()
 
         try:
             await asyncio.wait_for(self._refresh_external_sources(), timeout=12)
@@ -97,11 +106,14 @@ class SimulatorBot(Client):
             asyncio.create_task(self._account_resync_loop()),
             asyncio.create_task(self._ncaa_refresh_loop()),
             asyncio.create_task(self._playoff_refresh_loop()),
-            asyncio.create_task(self._live_odds_refresh_loop()),
             asyncio.create_task(self._reporter_loop()),
             asyncio.create_task(self._strategy_loop()),
             asyncio.create_task(self._account_log_loop()),
         ]
+        if self.use_betting_odds:
+            tasks.append(asyncio.create_task(self._live_odds_refresh_loop()))
+        else:
+            logger.info("betting odds disabled; running without live odds source")
         try:
             await asyncio.gather(*tasks)
         finally:
@@ -164,6 +176,7 @@ class SimulatorBot(Client):
                 self.state_store.apply_account_snapshot(cash, margin, positions, total_pnl=total_pnl, avg_entries=avg_entries)
                 self.state_store.apply_open_orders_snapshot(orders)
                 self.state_store.apply_orderbook_snapshot(books)
+                self._backfill_missing_avg_entries_from_mark()
                 self._strategy_event.set()
             except Exception as exc:
                 logger.warning("account resync failed: %s", exc)
@@ -276,20 +289,27 @@ class SimulatorBot(Client):
         self.state_store.apply_team_states(team_states)
         probs = await self.playoff_source.refresh()
         self.state_store.apply_probabilities(probs)
-        raws = await self.live_odds_source.fetch_games_odds()
-        live: dict[str, LiveGameProb] = {}
-        for raw in raws:
-            parsed = self.live_odds_source.extract_moneyline_probs(raw)
-            if parsed:
-                live[parsed.game_id] = parsed
-        self.state_store.apply_live_game_probs(live)
+        odds_raw_count = 0
+        odds_parsed_count = 0
+        if self.use_betting_odds:
+            raws = await self.live_odds_source.fetch_games_odds()
+            odds_raw_count = len(raws)
+            live: dict[str, LiveGameProb] = {}
+            for raw in raws:
+                parsed = self.live_odds_source.extract_moneyline_probs(raw)
+                if parsed:
+                    live[parsed.game_id] = parsed
+            odds_parsed_count = len(live)
+            self.state_store.apply_live_game_probs(live)
+        else:
+            self.state_store.apply_live_game_probs({})
         self._validate_mappings()
         logger.info(
             "external refresh: team_states=%d playoff_probs=%d odds_raw=%d odds_parsed=%d",
             len(team_states),
             len(probs),
-            len(raws),
-            len(live),
+            odds_raw_count,
+            odds_parsed_count,
         )
 
 
@@ -310,6 +330,8 @@ class SimulatorBot(Client):
 
 
     def _should_poll_live_odds(self, now_ts: float) -> bool:
+        if not getattr(self, "use_betting_odds", True):
+            return False
         # Poll frequently during live games; otherwise only near scheduled tip-off windows.
         # If NCAA team states are temporarily unavailable, keep polling so odds
         # still flow and dependent strategies/mapping do not stall.
@@ -371,6 +393,24 @@ class SimulatorBot(Client):
             if symbol not in state.avg_entry_by_symbol and symbol in snapshot_avg:
                 state.avg_entry_by_symbol[symbol] = snapshot_avg[symbol]
                 state.entry_source_by_symbol[symbol] = snapshot_entry_source.get(symbol, "server_snapshot")
+
+    def _backfill_missing_avg_entries_from_mark(self) -> None:
+        """Estimate avg-entry from mark for restart snapshots that only include qty."""
+        state = self.state_store.state
+        for symbol, qty in state.positions_raw.items():
+            if qty == 0 or symbol in state.avg_entry_by_symbol:
+                continue
+            book = state.order_books.get(symbol)
+            fv = state.fair_values.get(symbol)
+            mark, _ = self.pnl_engine.compute_mark_price(
+                book,
+                last_trade=state.last_trade_by_symbol.get(symbol),
+                fv=fv.active_fv if fv else None,
+            )
+            if mark is None or mark <= 0:
+                continue
+            state.avg_entry_by_symbol[symbol] = mark
+            state.entry_source_by_symbol[symbol] = "server_snapshot_mark_backfill"
 
     def _load_local_fills_for_seed(self) -> list[FillView]:
         path = config.FILLS_CSV

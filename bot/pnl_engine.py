@@ -33,12 +33,13 @@ class PnlEngine:
 
     @staticmethod
     def compute_mark_price(book, last_trade: float | None = None, fv: float | None = None) -> tuple[float | None, str]:
+        if last_trade is not None and last_trade > 0:
+            return last_trade, "last_trade"
+
         bid = _clean_price(book.best_bid.price) if book and book.best_bid else None
         ask = _clean_price(book.best_ask.price) if book and book.best_ask else None
         if bid is not None and ask is not None:
             return (bid + ask) / 2.0, "mid"
-        if last_trade is not None and last_trade > 0:
-            return last_trade, "last_trade"
         if fv is not None and fv > 0:
             return fv, "fair_value"
         return bid or ask, "book_single_side" if (bid or ask) is not None else "none"
@@ -52,7 +53,7 @@ class PnlEngine:
             fv = state.fair_values.get(symbol)
             team_state = state.team_states.get(meta.normalized_team_name) if meta else None
             avg = state.avg_entry_by_symbol.get(symbol)
-            entry_source = state.entry_source_by_symbol.get(symbol, "unknown_after_restart")
+            entry_source = state.entry_source_by_symbol.get(symbol, "server_snapshot_qty_only")
             mark, mark_source = self.compute_mark_price(book, last_trade=state.last_trade_by_symbol.get(symbol), fv=fv.active_fv if fv else None)
             unrealized = ((mark - avg) * qty) if (avg is not None and mark is not None) else None
             edges = state.signal_edges_by_symbol.get(symbol, (None, None))
